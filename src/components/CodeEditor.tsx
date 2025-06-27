@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { Play, Square, RefreshCw, Clock, AlertTriangle } from 'lucide-react';
+import { JavaInterpreter } from '../interpreter/JavaInterpreter';
 
 const CodeEditor: React.FC = () => {
   const [code, setCode] = useState(`@Deadline(ms=5)
@@ -25,6 +26,7 @@ public class IoTSensor {
         if (temp > 80) {
             triggerAlert();
         }
+        System.out.println("Temperature: " + temp + "°C");
     }
     
     private void triggerAlert() {
@@ -34,31 +36,67 @@ public class IoTSensor {
 
   const [isRunning, setIsRunning] = useState(false);
   const [output, setOutput] = useState('');
-  const [deadlineViolations, setDeadlineViolations] = useState<string[]>([]);
+  const [interpreter] = useState(() => new JavaInterpreter());
+  const [executionStats, setExecutionStats] = useState({
+    executionTime: 0,
+    gcPauseTime: 0,
+    deadlineCompliance: 100,
+    violations: 0
+  });
 
-  const handleRun = () => {
+  const handleRun = async () => {
     setIsRunning(true);
     setOutput('Compiling with JavaRT interpreter...\n');
     
-    // Simulate compilation and execution
-    setTimeout(() => {
+    try {
+      // Simulate compilation delay
+      await new Promise(resolve => setTimeout(resolve, 300));
       setOutput(prev => prev + 'Analyzing @Deadline annotations...\n');
-      setTimeout(() => {
-        setOutput(prev => prev + 'Real-time GC initialized (0.3ms max pause)\n');
-        setTimeout(() => {
-          setOutput(prev => prev + 'Executing IoTSensor.processData()...\n');
-          setTimeout(() => {
-            setOutput(prev => prev + 'Temperature alert: 87°C\n');
-            setOutput(prev => prev + 'Execution completed successfully\n');
-            setOutput(prev => prev + '\n=== Performance Metrics ===\n');
-            setOutput(prev => prev + 'Total execution time: 3.2ms\n');
-            setOutput(prev => prev + 'GC pause time: 0.2ms\n');
-            setOutput(prev => prev + 'Deadline compliance: 100%\n');
-            setIsRunning(false);
-          }, 500);
-        }, 300);
-      }, 400);
-    }, 300);
+      
+      await new Promise(resolve => setTimeout(resolve, 200));
+      setOutput(prev => prev + 'Real-time GC initialized (0.3ms max pause)\n');
+      
+      await new Promise(resolve => setTimeout(resolve, 200));
+      setOutput(prev => prev + 'Executing Java code...\n');
+      
+      const startTime = performance.now();
+      const result = interpreter.interpret(code);
+      const executionTime = performance.now() - startTime;
+      
+      setOutput(prev => prev + result.output + '\n');
+      
+      // Calculate statistics
+      const gcMetrics = interpreter.getGCMetrics();
+      const violations = interpreter.getDeadlineViolations();
+      const avgGCPause = gcMetrics.length > 0 
+        ? gcMetrics.reduce((sum, m) => sum + m.pauseTime, 0) / gcMetrics.length 
+        : 0;
+      
+      setExecutionStats({
+        executionTime: parseFloat(executionTime.toFixed(2)),
+        gcPauseTime: parseFloat(avgGCPause.toFixed(2)),
+        deadlineCompliance: violations.length === 0 ? 100 : Math.max(0, 100 - violations.length * 10),
+        violations: violations.length
+      });
+      
+      setOutput(prev => prev + '\n=== Performance Metrics ===\n');
+      setOutput(prev => prev + `Total execution time: ${executionTime.toFixed(2)}ms\n`);
+      setOutput(prev => prev + `GC pause time: ${avgGCPause.toFixed(2)}ms\n`);
+      setOutput(prev => prev + `Deadline violations: ${violations.length}\n`);
+      setOutput(prev => prev + `Deadline compliance: ${violations.length === 0 ? '100%' : `${Math.max(0, 100 - violations.length * 10)}%`}\n`);
+      
+      if (violations.length > 0) {
+        setOutput(prev => prev + '\n=== Deadline Violations ===\n');
+        violations.forEach(violation => {
+          setOutput(prev => prev + `${violation}\n`);
+        });
+      }
+      
+    } catch (error) {
+      setOutput(prev => prev + `\nError: ${error instanceof Error ? error.message : String(error)}\n`);
+    } finally {
+      setIsRunning(false);
+    }
   };
 
   const handleStop = () => {
@@ -120,8 +158,8 @@ public class IoTSensor {
         <div className="flex items-center justify-between p-4 border-b border-gray-700">
           <h2 className="text-lg font-semibold">Execution Output</h2>
           <div className="flex items-center space-x-2 text-sm text-gray-400">
-            <div className="w-2 h-2 bg-green-500 rounded-full"></div>
-            <span>Real-time Mode</span>
+            <div className={`w-2 h-2 rounded-full ${isRunning ? 'bg-yellow-500 animate-pulse' : 'bg-green-500'}`}></div>
+            <span>{isRunning ? 'Running' : 'Ready'}</span>
           </div>
         </div>
         
@@ -135,18 +173,27 @@ public class IoTSensor {
         <div className="p-4 border-t border-gray-700 bg-gray-750">
           <div className="grid grid-cols-3 gap-4">
             <div className="text-center">
-              <div className="text-2xl font-bold text-green-400">0.3ms</div>
+              <div className="text-2xl font-bold text-green-400">{executionStats.gcPauseTime}ms</div>
               <div className="text-xs text-gray-400">Avg GC Pause</div>
             </div>
             <div className="text-center">
-              <div className="text-2xl font-bold text-blue-400">100%</div>
+              <div className={`text-2xl font-bold ${executionStats.violations === 0 ? 'text-green-400' : 'text-red-400'}`}>
+                {executionStats.deadlineCompliance}%
+              </div>
               <div className="text-xs text-gray-400">Deadline Met</div>
             </div>
             <div className="text-center">
-              <div className="text-2xl font-bold text-purple-400">3.2ms</div>
+              <div className="text-2xl font-bold text-purple-400">{executionStats.executionTime}ms</div>
               <div className="text-xs text-gray-400">Total Runtime</div>
             </div>
           </div>
+          
+          {executionStats.violations > 0 && (
+            <div className="mt-3 flex items-center space-x-2 text-sm text-red-400">
+              <AlertTriangle className="w-4 h-4" />
+              <span>{executionStats.violations} deadline violation{executionStats.violations !== 1 ? 's' : ''}</span>
+            </div>
+          )}
         </div>
       </div>
     </div>
