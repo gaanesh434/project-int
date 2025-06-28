@@ -25,6 +25,14 @@ export enum TokenType {
   RETURN = 'return',
   NEW = 'new',
   THIS = 'this',
+  TRUE = 'true',
+  FALSE = 'false',
+  
+  // IoT-specific annotations
+  DEADLINE = '@Deadline',
+  SENSOR = '@Sensor',
+  SAFETY_CHECK = '@SafetyCheck',
+  REAL_TIME = '@RealTime',
   
   // Operators
   PLUS = '+',
@@ -59,7 +67,9 @@ export enum TokenType {
   // Special
   ANNOTATION = '@',
   EOF = 'EOF',
-  NEWLINE = 'NEWLINE'
+  NEWLINE = 'NEWLINE',
+  WHITESPACE = 'WHITESPACE',
+  COMMENT = 'COMMENT'
 }
 
 export interface Token {
@@ -67,6 +77,8 @@ export interface Token {
   value: string;
   line: number;
   column: number;
+  startIndex: number;
+  endIndex: number;
 }
 
 export class JavaLexer {
@@ -94,9 +106,16 @@ export class JavaLexer {
     ['return', TokenType.RETURN],
     ['new', TokenType.NEW],
     ['this', TokenType.THIS],
-    ['true', TokenType.BOOLEAN],
-    ['false', TokenType.BOOLEAN],
+    ['true', TokenType.TRUE],
+    ['false', TokenType.FALSE],
     ['null', TokenType.NULL]
+  ]);
+
+  private iotAnnotations: Map<string, TokenType> = new Map([
+    ['@Deadline', TokenType.DEADLINE],
+    ['@Sensor', TokenType.SENSOR],
+    ['@SafetyCheck', TokenType.SAFETY_CHECK],
+    ['@RealTime', TokenType.REAL_TIME]
   ]);
 
   constructor(source: string) {
@@ -104,6 +123,12 @@ export class JavaLexer {
   }
 
   tokenize(): Token[] {
+    this.tokens = [];
+    this.start = 0;
+    this.current = 0;
+    this.line = 1;
+    this.column = 1;
+
     while (!this.isAtEnd()) {
       this.start = this.current;
       this.scanToken();
@@ -113,19 +138,23 @@ export class JavaLexer {
       type: TokenType.EOF,
       value: '',
       line: this.line,
-      column: this.column
+      column: this.column,
+      startIndex: this.current,
+      endIndex: this.current
     });
 
     return this.tokens;
   }
 
   private scanToken(): void {
+    const startColumn = this.column;
     const c = this.advance();
 
     switch (c) {
       case ' ':
       case '\r':
       case '\t':
+        // Skip whitespace
         break;
       case '\n':
         this.line++;
@@ -159,7 +188,7 @@ export class JavaLexer {
         this.addToken(TokenType.SEMICOLON);
         break;
       case '@':
-        this.addToken(TokenType.ANNOTATION);
+        this.annotation();
         break;
       case '+':
         if (this.match('+')) {
@@ -180,13 +209,9 @@ export class JavaLexer {
         break;
       case '/':
         if (this.match('/')) {
-          // Single line comment
-          while (this.peek() !== '\n' && !this.isAtEnd()) {
-            this.advance();
-          }
+          this.singleLineComment();
         } else if (this.match('*')) {
-          // Multi-line comment
-          this.blockComment();
+          this.multiLineComment();
         } else {
           this.addToken(TokenType.DIVIDE);
         }
@@ -225,13 +250,39 @@ export class JavaLexer {
         } else if (this.isAlpha(c)) {
           this.identifier();
         } else {
-          throw new Error(`Unexpected character: ${c} at line ${this.line}`);
+          // Skip unknown characters
         }
         break;
     }
   }
 
-  private blockComment(): void {
+  private annotation(): void {
+    const startPos = this.current - 1;
+    
+    // Read the annotation name
+    while (this.isAlphaNumeric(this.peek())) {
+      this.advance();
+    }
+    
+    const text = this.source.substring(startPos, this.current);
+    const type = this.iotAnnotations.get(text) || TokenType.ANNOTATION;
+    
+    this.addToken(type, text);
+  }
+
+  private singleLineComment(): void {
+    const startPos = this.start;
+    while (this.peek() !== '\n' && !this.isAtEnd()) {
+      this.advance();
+    }
+    
+    const comment = this.source.substring(startPos, this.current);
+    this.addToken(TokenType.COMMENT, comment);
+  }
+
+  private multiLineComment(): void {
+    const startPos = this.start;
+    
     while (!this.isAtEnd()) {
       if (this.peek() === '*' && this.peekNext() === '/') {
         this.advance(); // consume '*'
@@ -244,9 +295,14 @@ export class JavaLexer {
       }
       this.advance();
     }
+    
+    const comment = this.source.substring(startPos, this.current);
+    this.addToken(TokenType.COMMENT, comment);
   }
 
   private string(): void {
+    const startPos = this.start;
+    
     while (this.peek() !== '"' && !this.isAtEnd()) {
       if (this.peek() === '\n') {
         this.line++;
@@ -337,7 +393,9 @@ export class JavaLexer {
       type,
       value: literal !== undefined ? literal : text,
       line: this.line,
-      column: this.column - text.length
+      column: this.column - text.length,
+      startIndex: this.start,
+      endIndex: this.current
     });
   }
 }

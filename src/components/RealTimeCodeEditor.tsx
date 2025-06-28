@@ -1,8 +1,9 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { Play, Square, RefreshCw, Clock, AlertTriangle, Trash2, Shield, Rewind, FastForward, Zap } from 'lucide-react';
-import { EnhancedJavaInterpreter } from '../interpreter/EnhancedJavaInterpreter';
-import { SyntaxHighlighter } from './SyntaxHighlighter';
-import { AutoComplete } from './AutoComplete';
+import { JavaInterpreter } from '../interpreter/core/JavaInterpreter';
+import { SyntaxHighlighter } from './enhanced/SyntaxHighlighter';
+import { AutoCompleteWidget } from './enhanced/AutoCompleteWidget';
+import { AutoCompleter, CompletionSuggestion } from '../interpreter/core/AutoCompleter';
 
 const RealTimeCodeEditor: React.FC = () => {
   const [code, setCode] = useState(`// Real-time IoT Sensor with Enhanced Safety
@@ -64,10 +65,11 @@ public void dataTransmit(int temp, int humidity) {
 
   const [isRunning, setIsRunning] = useState(false);
   const [output, setOutput] = useState('');
-  const [interpreter] = useState(() => new EnhancedJavaInterpreter());
+  const [interpreter] = useState(() => new JavaInterpreter());
   const [errors, setErrors] = useState<Array<{ line: number; message: string; type: 'error' | 'warning' }>>([]);
   const [cursorPosition, setCursorPosition] = useState(0);
   const [showAutoComplete, setShowAutoComplete] = useState(false);
+  const [autoCompleter] = useState(() => new AutoCompleter());
   const textareaRef = useRef<HTMLTextAreaElement>(null);
 
   const [executionStats, setExecutionStats] = useState({
@@ -83,93 +85,18 @@ public void dataTransmit(int temp, int humidity) {
     compactionTime: 0
   });
 
-  const [timeTravelMode, setTimeTravelMode] = useState(false);
-  const [currentSnapshot, setCurrentSnapshot] = useState<any>(null);
-
-  // Real-time syntax validation
+  // Handle auto-completion trigger
   useEffect(() => {
-    const validateSyntax = () => {
-      const newErrors: Array<{ line: number; message: string; type: 'error' | 'warning' }> = [];
-      const lines = code.split('\n');
-      
-      lines.forEach((line, index) => {
-        const lineNumber = index + 1;
-        const trimmedLine = line.trim();
-        
-        // Check for @Deadline annotation validation
-        if (trimmedLine.startsWith('@Deadline')) {
-          const match = trimmedLine.match(/@Deadline\s*\(\s*ms\s*=\s*(\d+)\s*\)/);
-          if (!match) {
-            newErrors.push({
-              line: lineNumber,
-              message: 'Invalid @Deadline syntax. Use @Deadline(ms=value)',
-              type: 'error'
-            });
-          } else {
-            const ms = parseInt(match[1]);
-            if (ms <= 0) {
-              newErrors.push({
-                line: lineNumber,
-                message: 'Deadline must be positive',
-                type: 'error'
-              });
-            } else if (ms > 1000) {
-              newErrors.push({
-                line: lineNumber,
-                message: 'Deadline > 1000ms may not be real-time',
-                type: 'warning'
-              });
-            }
-          }
-        }
-        
-        // Check for potential division by zero
-        if (trimmedLine.includes('/') && !trimmedLine.includes('//')) {
-          const divMatch = trimmedLine.match(/(\w+)\s*\/\s*(\w+|\d+)/);
-          if (divMatch && divMatch[2] === '0') {
-            newErrors.push({
-              line: lineNumber,
-              message: 'Division by zero detected',
-              type: 'error'
-            });
-          }
-        }
-        
-        // Check for unsafe operations in IoT context
-        if (trimmedLine.includes('System.exit') || trimmedLine.includes('Runtime.getRuntime')) {
-          newErrors.push({
-            line: lineNumber,
-            message: 'Unsafe operation not allowed in IoT environment',
-            type: 'error'
-          });
-        }
-        
-        // Check for missing semicolons
-        if (trimmedLine.length > 0 && 
-            !trimmedLine.endsWith(';') && 
-            !trimmedLine.endsWith('{') && 
-            !trimmedLine.endsWith('}') &&
-            !trimmedLine.startsWith('//') &&
-            !trimmedLine.startsWith('@') &&
-            !trimmedLine.includes('if') &&
-            !trimmedLine.includes('for') &&
-            !trimmedLine.includes('while') &&
-            !trimmedLine.includes('public') &&
-            !trimmedLine.includes('private')) {
-          newErrors.push({
-            line: lineNumber,
-            message: 'Missing semicolon',
-            type: 'warning'
-          });
-        }
-      });
-      
-      setErrors(newErrors);
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.ctrlKey && e.key === ' ') {
+        e.preventDefault();
+        setShowAutoComplete(true);
+      }
     };
 
-    const debounceTimer = setTimeout(validateSyntax, 300);
-    return () => clearTimeout(debounceTimer);
-  }, [code]);
+    document.addEventListener('keydown', handleKeyDown);
+    return () => document.removeEventListener('keydown', handleKeyDown);
+  }, []);
 
   const handleRun = async () => {
     setIsRunning(true);
@@ -206,14 +133,13 @@ public void dataTransmit(int temp, int humidity) {
       const deadlineViolations = interpreter.getDeadlineViolations();
       const safetyViolations = interpreter.getSafetyViolations();
       const heapStatus = interpreter.getHeapStatus();
-      const snapshots = interpreter.getTimeTravelSnapshots();
       
       const avgGCPause = gcMetrics.length > 0 
-        ? gcMetrics.reduce((sum, m) => sum + m.pauseTime, 0) / gcMetrics.length 
+        ? gcMetrics.reduce((sum: number, m: any) => sum + m.pauseTime, 0) / gcMetrics.length 
         : 0;
       
       const avgCompactionTime = gcMetrics.length > 0 
-        ? gcMetrics.reduce((sum, m) => sum + m.compactionTime, 0) / gcMetrics.length 
+        ? gcMetrics.reduce((sum: number, m: any) => sum + m.compactionTime, 0) / gcMetrics.length 
         : 0;
       
       const latestGC = gcMetrics.length > 0 ? gcMetrics[gcMetrics.length - 1] : null;
@@ -241,25 +167,24 @@ public void dataTransmit(int temp, int humidity) {
       setOutput(prev => prev + `Objects freed: ${latestGC ? latestGC.freedObjects : 0}\n`);
       setOutput(prev => prev + `Safety violations: ${safetyViolations.length}\n`);
       setOutput(prev => prev + `Deadline violations: ${deadlineViolations.length}\n`);
-      setOutput(prev => prev + `Time-travel snapshots: ${snapshots.length}\n`);
       
       if (deadlineViolations.length > 0) {
         setOutput(prev => prev + '\n=== ⚠️ Deadline Violations ===\n');
-        deadlineViolations.forEach(violation => {
+        deadlineViolations.forEach((violation: any) => {
           setOutput(prev => prev + `${violation.methodName}: ${violation.actualMs.toFixed(2)}ms > ${violation.expectedMs}ms (${violation.severity})\n`);
         });
       }
       
       if (safetyViolations.length > 0) {
         setOutput(prev => prev + '\n=== 🛡️ Safety Violations ===\n');
-        safetyViolations.forEach(violation => {
-          setOutput(prev => prev + `Line ${violation.line}: ${violation.message} (${violation.severity})\n`);
+        safetyViolations.forEach((violation: any) => {
+          setOutput(prev => prev + `Line ${violation.line}: ${violation.message} (${violation.type})\n`);
         });
       }
       
       if (gcMetrics.length > 0) {
         setOutput(prev => prev + '\n=== 🗑️ Garbage Collection Activity ===\n');
-        gcMetrics.forEach((metric, index) => {
+        gcMetrics.forEach((metric: any, index: number) => {
           setOutput(prev => prev + `GC #${index + 1}: ${metric.pauseTime.toFixed(2)}ms pause, ${metric.heapUsage.toFixed(1)}% heap, ${metric.offHeapUsage.toFixed(1)}% off-heap\n`);
         });
       }
@@ -271,22 +196,6 @@ public void dataTransmit(int temp, int humidity) {
     }
   };
 
-  const handleTimeTravelBack = () => {
-    const snapshot = interpreter.stepBackInTime();
-    if (snapshot) {
-      setCurrentSnapshot(snapshot);
-      setOutput(prev => prev + `\n⏪ [Time Travel] Stepped back to line ${snapshot.line} (${new Date(snapshot.timestamp).toLocaleTimeString()})\n`);
-    }
-  };
-
-  const handleTimeTravelForward = () => {
-    const snapshot = interpreter.stepForwardInTime();
-    if (snapshot) {
-      setCurrentSnapshot(snapshot);
-      setOutput(prev => prev + `\n⏩ [Time Travel] Stepped forward to line ${snapshot.line} (${new Date(snapshot.timestamp).toLocaleTimeString()})\n`);
-    }
-  };
-
   const handleStop = () => {
     setIsRunning(false);
     setOutput(prev => prev + '\n🛑 [Execution stopped by user]\n');
@@ -294,7 +203,6 @@ public void dataTransmit(int temp, int humidity) {
 
   const handleClear = () => {
     setOutput('');
-    setCurrentSnapshot(null);
     setExecutionStats({
       executionTime: 0,
       gcPauseTime: 0,
@@ -315,7 +223,7 @@ public void dataTransmit(int temp, int humidity) {
     const gcMetrics = interpreter.getGCMetrics();
     const latest = gcMetrics[gcMetrics.length - 1];
     
-    setOutput(prev => prev + `\n🗑️ [Manual GC] Pause: ${latest.pauseTime.toFixed(2)}ms, Heap: ${heapStatus.percentage.toFixed(1)}%, Off-heap: ${(heapStatus.offHeap.allocated / heapStatus.offHeap.total * 100).toFixed(1)}%\n`);
+    setOutput(prev => prev + `\n🗑️ [Manual GC] Pause: ${latest?.pauseTime?.toFixed(2) || 0}ms, Heap: ${heapStatus.percentage.toFixed(1)}%, Off-heap: ${(heapStatus.offHeap.allocated / heapStatus.offHeap.total * 100).toFixed(1)}%\n`);
     
     if (latest) {
       setExecutionStats(prev => ({
@@ -330,21 +238,50 @@ public void dataTransmit(int temp, int humidity) {
     }
   };
 
-  const handleAutoCompleteSelect = (suggestion: string) => {
+  const handleAutoCompleteSelect = (suggestion: CompletionSuggestion) => {
     if (textareaRef.current) {
       const textarea = textareaRef.current;
       const start = textarea.selectionStart;
       const end = textarea.selectionEnd;
-      const newCode = code.substring(0, start) + suggestion + code.substring(end);
+      
+      // Get current word to replace
+      const beforeCursor = code.substring(0, start);
+      const currentWordMatch = beforeCursor.match(/[@\w]*$/);
+      const currentWordStart = currentWordMatch ? start - currentWordMatch[0].length : start;
+      
+      const newCode = code.substring(0, currentWordStart) + suggestion.insertText + code.substring(end);
       setCode(newCode);
       
       // Set cursor position after the inserted text
       setTimeout(() => {
         textarea.focus();
-        textarea.setSelectionRange(start + suggestion.length, start + suggestion.length);
+        const newPosition = currentWordStart + suggestion.insertText.length;
+        textarea.setSelectionRange(newPosition, newPosition);
       }, 0);
     }
     setShowAutoComplete(false);
+  };
+
+  const handleCodeChange = (newCode: string) => {
+    setCode(newCode);
+    
+    // Trigger auto-completion on certain characters
+    if (textareaRef.current) {
+      const position = textareaRef.current.selectionStart;
+      setCursorPosition(position);
+      
+      const beforeCursor = newCode.substring(0, position);
+      const shouldShowAutoComplete = 
+        beforeCursor.endsWith('@') ||
+        beforeCursor.match(/\w{2,}$/) ||
+        beforeCursor.endsWith('.');
+      
+      if (shouldShowAutoComplete && !showAutoComplete) {
+        setShowAutoComplete(true);
+      } else if (!shouldShowAutoComplete && showAutoComplete) {
+        setShowAutoComplete(false);
+      }
+    }
   };
 
   return (
@@ -396,17 +333,18 @@ public void dataTransmit(int temp, int humidity) {
         <div className="p-4 flex-1 relative">
           <SyntaxHighlighter 
             code={code} 
-            onChange={setCode} 
+            onChange={handleCodeChange} 
             errors={errors}
+            onErrorsChange={setErrors}
           />
           
-          {showAutoComplete && (
-            <AutoComplete
-              code={code}
-              cursorPosition={cursorPosition}
-              onSelect={handleAutoCompleteSelect}
-            />
-          )}
+          <AutoCompleteWidget
+            code={code}
+            cursorPosition={cursorPosition}
+            onSelect={handleAutoCompleteSelect}
+            isVisible={showAutoComplete}
+            onVisibilityChange={setShowAutoComplete}
+          />
         </div>
         
         {/* Enhanced Features Info */}
@@ -429,15 +367,15 @@ public void dataTransmit(int temp, int humidity) {
             <div className="flex items-start space-x-2">
               <Zap className="w-4 h-4 text-purple-400 mt-0.5" />
               <div>
-                <div className="text-purple-400 font-medium">Off-heap Optimization</div>
-                <div className="text-gray-400">ByteBuffer.allocateDirect() for large objects</div>
+                <div className="text-purple-400 font-medium">Auto-completion</div>
+                <div className="text-gray-400">Ctrl+Space for IoT annotations and Java constructs</div>
               </div>
             </div>
             <div className="flex items-start space-x-2">
               <RefreshCw className="w-4 h-4 text-yellow-400 mt-0.5" />
               <div>
-                <div className="text-yellow-400 font-medium">Time-travel Debug</div>
-                <div className="text-gray-400">Circular buffer with bidirectional execution</div>
+                <div className="text-yellow-400 font-medium">Real-time Validation</div>
+                <div className="text-gray-400">Live syntax highlighting and error detection</div>
               </div>
             </div>
           </div>
@@ -449,20 +387,6 @@ public void dataTransmit(int temp, int humidity) {
         <div className="flex items-center justify-between p-4 border-b border-gray-700 flex-shrink-0">
           <h2 className="text-lg font-semibold">Live Execution Monitor</h2>
           <div className="flex items-center space-x-2">
-            <button
-              onClick={handleTimeTravelBack}
-              className="flex items-center space-x-2 px-3 py-2 bg-indigo-600 hover:bg-indigo-500 rounded-lg transition-colors"
-            >
-              <Rewind className="w-4 h-4" />
-              <span className="text-sm">Back</span>
-            </button>
-            <button
-              onClick={handleTimeTravelForward}
-              className="flex items-center space-x-2 px-3 py-2 bg-indigo-600 hover:bg-indigo-500 rounded-lg transition-colors"
-            >
-              <FastForward className="w-4 h-4" />
-              <span className="text-sm">Forward</span>
-            </button>
             <button
               onClick={handleClear}
               className="flex items-center space-x-2 px-3 py-2 bg-gray-600 hover:bg-gray-500 rounded-lg transition-colors"
@@ -485,10 +409,9 @@ Features Active:
 • Real-time syntax highlighting with IoT annotations
 • @Deadline enforcement with sub-millisecond precision
 • Formal verification for safety-critical operations
-• Time-travel debugging with circular buffer
-• Off-heap memory optimization (ByteBuffer.allocateDirect)
-• IoT safety constraints (no dynamic class loading)
-• Auto-completion for sensor APIs and annotations
+• Auto-completion for sensor APIs and annotations (Ctrl+Space)
+• Live error detection and validation
+• Production-ready Java interpreter
 
 Type your code and press Run to see real execution metrics!`}
           </pre>
@@ -548,17 +471,6 @@ Type your code and press Run to see real execution metrics!`}
                 {executionStats.safetyViolations > 0 && executionStats.deadlineViolations > 0 && ', '}
                 {executionStats.deadlineViolations > 0 && `${executionStats.deadlineViolations} deadline miss${executionStats.deadlineViolations !== 1 ? 'es' : ''}`}
               </span>
-            </div>
-          )}
-          
-          {currentSnapshot && (
-            <div className="mt-3 p-2 bg-indigo-900/20 border border-indigo-500 rounded text-sm">
-              <div className="text-indigo-400 font-medium">⏱️ Time Travel: Line {currentSnapshot.line}</div>
-              <div className="text-gray-300 text-xs">
-                Snapshot from {new Date(currentSnapshot.timestamp).toLocaleTimeString()} 
-                • Heap: {currentSnapshot.gcState.heapUsage.toFixed(1)}%
-                • Objects: {currentSnapshot.gcState.allocatedObjects}
-              </div>
             </div>
           )}
         </div>
