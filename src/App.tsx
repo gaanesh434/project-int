@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import Header from './components/Header';
 import Sidebar from './components/Sidebar';
 import RealTimeCodeEditor from './components/RealTimeCodeEditor';
@@ -15,6 +15,16 @@ type ActiveTab = 'editor' | 'gc' | 'debugger' | 'wasm' | 'benchmarks' | 'embedde
 function App() {
   const [activeTab, setActiveTab] = useState<ActiveTab>('editor');
   const [sidebarOpen, setSidebarOpen] = useState(true);
+
+  // Listen for help navigation events
+  useEffect(() => {
+    const handleHelpNavigation = () => {
+      setActiveTab('help');
+    };
+
+    window.addEventListener('navigate-to-help', handleHelpNavigation);
+    return () => window.removeEventListener('navigate-to-help', handleHelpNavigation);
+  }, []);
 
   const renderContent = () => {
     switch (activeTab) {

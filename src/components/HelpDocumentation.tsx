@@ -447,7 +447,8 @@ public void realTimeControlSystem() {
                 </div>
               </div>
             </div>
-          </div>
+          </div>        )
+
         );
 
       case 'debugger':
@@ -662,7 +663,10 @@ public void realTimeControlSystem() {
                     <li>• Variable evaluation</li>
                     <li>• Output verification</li>
                     <li>• Performance measurement</li>
-                    <li>• Safety checking</li>
+                    <li>• Safety checkin
+    }
+  }
+}g</li>
                   </ul>
                 </div>
               </div>

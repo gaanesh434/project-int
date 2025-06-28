@@ -2,6 +2,11 @@ import React from 'react';
 import { Activity, Github, HelpCircle } from 'lucide-react';
 
 const Header: React.FC = () => {
+  const handleHelpClick = () => {
+    // This will be handled by the parent component
+    window.dispatchEvent(new CustomEvent('navigate-to-help'));
+  };
+
   return (
     <header className="bg-gray-800 border-b border-gray-700">
       <div className="px-6 py-4">
@@ -28,7 +33,10 @@ const Header: React.FC = () => {
                 <span className="text-sm">GitHub</span>
               </button>
               
-              <button className="flex items-center space-x-2 px-3 py-2 bg-blue-600 hover:bg-blue-500 rounded-lg transition-colors">
+              <button 
+                onClick={handleHelpClick}
+                className="flex items-center space-x-2 px-3 py-2 bg-blue-600 hover:bg-blue-500 rounded-lg transition-colors"
+              >
                 <HelpCircle className="w-4 h-4" />
                 <span className="text-sm">Help & Docs</span>
               </button>

@@ -201,7 +201,7 @@ export const SyntaxHighlighter: React.FC<SyntaxHighlighterProps> = ({
   };
 
   const lineCount = code.split('\n').length;
-  const lineNumberWidth = Math.max(48, Math.log10(lineCount) * 8 + 32); // Dynamic width based on line count
+  const lineNumberWidth = Math.max(48, Math.log10(lineCount) * 8 + 32);
 
   return (
     <div className="relative h-full">
