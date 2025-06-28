@@ -18,102 +18,11 @@ export const SyntaxHighlighter: React.FC<SyntaxHighlighterProps> = ({
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const highlightRef = useRef<HTMLDivElement>(null);
 
-  // Real-time syntax validation
-  useEffect(() => {
-    const validateSyntax = () => {
-      try {
-        const lexer = new JavaLexer(code);
-        const tokens = lexer.tokenize();
-        const validator = new SyntaxValidator(tokens);
-        const syntaxErrors = validator.validate();
-        
-        const formattedErrors = syntaxErrors.map(error => ({
-          line: error.line,
-          message: error.message,
-          type: error.type
-        }));
-        
-        if (onErrorsChange) {
-          onErrorsChange(formattedErrors);
-        }
-      } catch (error) {
-        console.warn('Syntax validation error:', error);
-      }
-    };
-
-    const debounceTimer = setTimeout(validateSyntax, 300);
-    return () => clearTimeout(debounceTimer);
-  }, [code, onErrorsChange]);
-
-  const highlightSyntax = (text: string): string => {
-    try {
-      const lexer = new JavaLexer(text);
-      const tokens = lexer.tokenize();
-      
-      let highlightedCode = '';
-      let lastIndex = 0;
-      
-      for (const token of tokens) {
-        if (token.type === 'EOF') break;
-        
-        // Add any text between tokens
-        if (token.startIndex > lastIndex) {
-          highlightedCode += text.substring(lastIndex, token.startIndex);
-        }
-        
-        // Add highlighted token
-        const className = this.getTokenClassName(token.type);
-        highlightedCode += `<span class="${className}">${this.escapeHtml(token.value)}</span>`;
-        
-        lastIndex = token.endIndex;
-      }
-      
-      // Add any remaining text
-      if (lastIndex < text.length) {
-        highlightedCode += text.substring(lastIndex);
-      }
-      
-      return highlightedCode;
-    } catch (error) {
-      // Fallback to simple highlighting
-      return this.fallbackHighlighting(text);
-    }
-  };
-
-  const fallbackHighlighting = (text: string): string => {
-    let highlighted = text;
-    
-    // Java keywords
-    highlighted = highlighted.replace(/\b(class|public|private|static|void|int|double|String|boolean|if|else|while|for|return|new|this|true|false|null)\b/g, 
-      '<span class="text-blue-400 font-semibold">$1</span>');
-    
-    // IoT-specific annotations
-    highlighted = highlighted.replace(/(@Deadline|@Sensor|@SafetyCheck|@RealTime)/g, 
-      '<span class="text-purple-400 font-semibold">$1</span>');
-    
-    // String literals
-    highlighted = highlighted.replace(/"([^"\\]|\\.)*"/g, 
-      '<span class="text-green-400">$&</span>');
-    
-    // Numbers
-    highlighted = highlighted.replace(/\b\d+(\.\d+)?\b/g, 
-      '<span class="text-yellow-400">$&</span>');
-    
-    // Comments
-    highlighted = highlighted.replace(/\/\/.*$/gm, 
-      '<span class="text-gray-500 italic">$&</span>');
-    highlighted = highlighted.replace(/\/\*[\s\S]*?\*\//g, 
-      '<span class="text-gray-500 italic">$&</span>');
-    
-    // Method calls
-    highlighted = highlighted.replace(/(\w+)\s*\(/g, 
-      '<span class="text-cyan-400">$1</span>(');
-    
-    // Operators
-    highlighted = highlighted.replace(/([+\-*/%=<>!&|]+)/g, 
-      '<span class="text-red-400">$1</span>');
-    
-    return highlighted;
+  // Helper functions defined within the component scope
+  const escapeHtml = (text: string): string => {
+    const div = document.createElement('div');
+    div.textContent = text;
+    return div.innerHTML;
   };
 
   const getTokenClassName = (tokenType: string): string => {
@@ -180,10 +89,102 @@ export const SyntaxHighlighter: React.FC<SyntaxHighlighterProps> = ({
     }
   };
 
-  const escapeHtml = (text: string): string => {
-    const div = document.createElement('div');
-    div.textContent = text;
-    return div.innerHTML;
+  const fallbackHighlighting = (text: string): string => {
+    let highlighted = text;
+    
+    // Java keywords
+    highlighted = highlighted.replace(/\b(class|public|private|static|void|int|double|String|boolean|if|else|while|for|return|new|this|true|false|null)\b/g, 
+      '<span class="text-blue-400 font-semibold">$1</span>');
+    
+    // IoT-specific annotations
+    highlighted = highlighted.replace(/(@Deadline|@Sensor|@SafetyCheck|@RealTime)/g, 
+      '<span class="text-purple-400 font-semibold">$1</span>');
+    
+    // String literals
+    highlighted = highlighted.replace(/"([^"\\]|\\.)*"/g, 
+      '<span class="text-green-400">$&</span>');
+    
+    // Numbers
+    highlighted = highlighted.replace(/\b\d+(\.\d+)?\b/g, 
+      '<span class="text-yellow-400">$&</span>');
+    
+    // Comments
+    highlighted = highlighted.replace(/\/\/.*$/gm, 
+      '<span class="text-gray-500 italic">$&</span>');
+    highlighted = highlighted.replace(/\/\*[\s\S]*?\*\//g, 
+      '<span class="text-gray-500 italic">$&</span>');
+    
+    // Method calls
+    highlighted = highlighted.replace(/(\w+)\s*\(/g, 
+      '<span class="text-cyan-400">$1</span>(');
+    
+    // Operators
+    highlighted = highlighted.replace(/([+\-*/%=<>!&|]+)/g, 
+      '<span class="text-red-400">$1</span>');
+    
+    return highlighted;
+  };
+
+  // Real-time syntax validation
+  useEffect(() => {
+    const validateSyntax = () => {
+      try {
+        const lexer = new JavaLexer(code);
+        const tokens = lexer.tokenize();
+        const validator = new SyntaxValidator(tokens);
+        const syntaxErrors = validator.validate();
+        
+        const formattedErrors = syntaxErrors.map(error => ({
+          line: error.line,
+          message: error.message,
+          type: error.type
+        }));
+        
+        if (onErrorsChange) {
+          onErrorsChange(formattedErrors);
+        }
+      } catch (error) {
+        console.warn('Syntax validation error:', error);
+      }
+    };
+
+    const debounceTimer = setTimeout(validateSyntax, 300);
+    return () => clearTimeout(debounceTimer);
+  }, [code, onErrorsChange]);
+
+  const highlightSyntax = (text: string): string => {
+    try {
+      const lexer = new JavaLexer(text);
+      const tokens = lexer.tokenize();
+      
+      let highlightedCode = '';
+      let lastIndex = 0;
+      
+      for (const token of tokens) {
+        if (token.type === 'EOF') break;
+        
+        // Add any text between tokens
+        if (token.startIndex > lastIndex) {
+          highlightedCode += text.substring(lastIndex, token.startIndex);
+        }
+        
+        // Add highlighted token
+        const className = getTokenClassName(token.type);
+        highlightedCode += `<span class="${className}">${escapeHtml(token.value)}</span>`;
+        
+        lastIndex = token.endIndex;
+      }
+      
+      // Add any remaining text
+      if (lastIndex < text.length) {
+        highlightedCode += text.substring(lastIndex);
+      }
+      
+      return highlightedCode;
+    } catch (error) {
+      // Fallback to simple highlighting
+      return fallbackHighlighting(text);
+    }
   };
 
   const handleScroll = () => {
