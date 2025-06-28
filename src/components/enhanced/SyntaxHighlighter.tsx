@@ -45,92 +45,75 @@ export const SyntaxHighlighter: React.FC<SyntaxHighlighterProps> = ({
     return () => clearTimeout(debounceTimer);
   }, [code, onErrorsChange]);
 
-  const highlightSyntax = (text: string): JSX.Element[] => {
+  const highlightSyntax = (text: string): string => {
     try {
       const lexer = new JavaLexer(text);
       const tokens = lexer.tokenize();
-      const lines: JSX.Element[] = [];
       
-      let currentLine = 1;
-      let lineTokens: any[] = [];
+      let highlightedCode = '';
+      let lastIndex = 0;
       
       for (const token of tokens) {
         if (token.type === 'EOF') break;
         
-        if (token.line !== currentLine) {
-          // Process completed line
-          if (lineTokens.length > 0) {
-            lines.push(this.renderLine(lineTokens, currentLine));
-          }
-          
-          // Handle empty lines
-          while (currentLine < token.line - 1) {
-            currentLine++;
-            lines.push(
-              <div key={currentLine} className="leading-6 min-h-[24px]">
-                <span className="text-gray-100"> </span>
-              </div>
-            );
-          }
-          
-          lineTokens = [];
-          currentLine = token.line;
+        // Add any text between tokens
+        if (token.startIndex > lastIndex) {
+          highlightedCode += text.substring(lastIndex, token.startIndex);
         }
         
-        lineTokens.push(token);
+        // Add highlighted token
+        const className = this.getTokenClassName(token.type);
+        highlightedCode += `<span class="${className}">${this.escapeHtml(token.value)}</span>`;
+        
+        lastIndex = token.endIndex;
       }
       
-      // Process final line
-      if (lineTokens.length > 0) {
-        lines.push(this.renderLine(lineTokens, currentLine));
+      // Add any remaining text
+      if (lastIndex < text.length) {
+        highlightedCode += text.substring(lastIndex);
       }
       
-      return lines;
+      return highlightedCode;
     } catch (error) {
-      // Fallback to plain text if tokenization fails
-      return text.split('\n').map((line, index) => (
-        <div key={index} className="leading-6 min-h-[24px]">
-          <span className="text-gray-100">{line || ' '}</span>
-        </div>
-      ));
+      // Fallback to simple highlighting
+      return this.fallbackHighlighting(text);
     }
   };
 
-  const renderLine = (tokens: any[], lineNumber: number): JSX.Element => {
-    const elements: JSX.Element[] = [];
-    let lastEndIndex = 0;
+  const fallbackHighlighting = (text: string): string => {
+    let highlighted = text;
     
-    for (let i = 0; i < tokens.length; i++) {
-      const token = tokens[i];
-      
-      // Add whitespace before token if needed
-      if (token.startIndex > lastEndIndex) {
-        const whitespace = code.substring(lastEndIndex, token.startIndex);
-        if (whitespace) {
-          elements.push(
-            <span key={`ws-${i}`} className="text-gray-100">
-              {whitespace}
-            </span>
-          );
-        }
-      }
-      
-      // Add highlighted token
-      const className = this.getTokenClassName(token.type);
-      elements.push(
-        <span key={`token-${i}`} className={className}>
-          {token.value}
-        </span>
-      );
-      
-      lastEndIndex = token.endIndex;
-    }
+    // Java keywords
+    highlighted = highlighted.replace(/\b(class|public|private|static|void|int|double|String|boolean|if|else|while|for|return|new|this|true|false|null)\b/g, 
+      '<span class="text-blue-400 font-semibold">$1</span>');
     
-    return (
-      <div key={lineNumber} className="leading-6 min-h-[24px]">
-        {elements.length > 0 ? elements : <span className="text-gray-100"> </span>}
-      </div>
-    );
+    // IoT-specific annotations
+    highlighted = highlighted.replace(/(@Deadline|@Sensor|@SafetyCheck|@RealTime)/g, 
+      '<span class="text-purple-400 font-semibold">$1</span>');
+    
+    // String literals
+    highlighted = highlighted.replace(/"([^"\\]|\\.)*"/g, 
+      '<span class="text-green-400">$&</span>');
+    
+    // Numbers
+    highlighted = highlighted.replace(/\b\d+(\.\d+)?\b/g, 
+      '<span class="text-yellow-400">$&</span>');
+    
+    // Comments
+    highlighted = highlighted.replace(/\/\/.*$/gm, 
+      '<span class="text-gray-500 italic">$&</span>');
+    highlighted = highlighted.replace(/\/\*[\s\S]*?\*\//g, 
+      '<span class="text-gray-500 italic">$&</span>');
+    
+    // Method calls
+    highlighted = highlighted.replace(/(\w+)\s*\(/g, 
+      '<span class="text-cyan-400">$1</span>(');
+    
+    // Operators
+    highlighted = highlighted.replace(/([+\-*/%=<>!&|]+)/g, 
+      '<span class="text-red-400">$1</span>');
+    
+    return highlighted;
   };
 
   const getTokenClassName = (tokenType: string): string => {
@@ -197,6 +180,12 @@ export const SyntaxHighlighter: React.FC<SyntaxHighlighterProps> = ({
     }
   };
 
+  const escapeHtml = (text: string): string => {
+    const div = document.createElement('div');
+    div.textContent = text;
+    return div.innerHTML;
+  };
+
   const handleScroll = () => {
     if (textareaRef.current && highlightRef.current) {
       highlightRef.current.scrollTop = textareaRef.current.scrollTop;
@@ -238,9 +227,8 @@ export const SyntaxHighlighter: React.FC<SyntaxHighlighterProps> = ({
       <div 
         ref={highlightRef}
         className="absolute top-4 left-16 right-4 bottom-4 pointer-events-none font-mono text-sm leading-6 whitespace-pre-wrap overflow-hidden z-10"
-      >
-        {highlightSyntax(code)}
-      </div>
+        dangerouslySetInnerHTML={{ __html: highlightSyntax(code) }}
+      />
       
       {/* Error indicators on the right side */}
       {errors.length > 0 && (
