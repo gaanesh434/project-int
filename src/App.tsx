@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import Header from './components/Header';
 import Sidebar from './components/Sidebar';
-import EnhancedCodeEditor from './components/EnhancedCodeEditor';
+import RealTimeCodeEditor from './components/RealTimeCodeEditor';
 import GCMonitor from './components/GCMonitor';
 import TimeTravelDebugger from './components/TimeTravel';
 import WasmDemo from './components/WasmDemo';
@@ -17,7 +17,7 @@ function App() {
   const renderContent = () => {
     switch (activeTab) {
       case 'editor':
-        return <EnhancedCodeEditor />;
+        return <RealTimeCodeEditor />;
       case 'gc':
         return <GCMonitor />;
       case 'debugger':
@@ -29,7 +29,7 @@ function App() {
       case 'embedded':
         return <EmbeddedSimulator />;
       default:
-        return <EnhancedCodeEditor />;
+        return <RealTimeCodeEditor />;
     }
   };
 
