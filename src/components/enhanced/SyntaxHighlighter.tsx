@@ -200,17 +200,24 @@ export const SyntaxHighlighter: React.FC<SyntaxHighlighterProps> = ({
     }
   };
 
+  const lineCount = code.split('\n').length;
+  const lineNumberWidth = Math.max(48, Math.log10(lineCount) * 8 + 32); // Dynamic width based on line count
+
   return (
     <div className="relative h-full">
-      {/* Line numbers */}
-      <div className="absolute left-0 top-0 w-12 bg-gray-900 h-full border-r border-gray-600 flex flex-col text-xs text-gray-500 z-30">
+      {/* Line numbers with dynamic width */}
+      <div 
+        className="absolute left-0 top-0 bg-gray-900 h-full border-r border-gray-600 flex flex-col text-xs text-gray-500 z-30 overflow-hidden"
+        style={{ width: `${lineNumberWidth}px` }}
+      >
         {code.split('\n').map((_, index) => {
           const lineNumber = index + 1;
           const hasError = errors.some(error => error.line === lineNumber);
           return (
             <div 
               key={index} 
-              className={`h-6 flex items-center justify-center ${hasError ? 'bg-red-900/30 text-red-400' : ''}`}
+              className={`h-6 flex items-center justify-center flex-shrink-0 ${hasError ? 'bg-red-900/30 text-red-400' : ''}`}
+              style={{ minHeight: '24px' }}
             >
               {lineNumber}
             </div>
@@ -224,16 +231,24 @@ export const SyntaxHighlighter: React.FC<SyntaxHighlighterProps> = ({
         value={code}
         onChange={(e) => onChange(e.target.value)}
         onScroll={handleScroll}
-        className="w-full h-full bg-transparent text-transparent caret-white font-mono text-sm p-4 pl-16 rounded-lg border border-gray-600 focus:border-blue-500 focus:outline-none resize-none relative z-20"
+        className="w-full h-full bg-transparent text-transparent caret-white font-mono text-sm p-4 rounded-lg border border-gray-600 focus:border-blue-500 focus:outline-none resize-none relative z-20"
+        style={{ 
+          caretColor: 'white',
+          paddingLeft: `${lineNumberWidth + 16}px`,
+          lineHeight: '24px'
+        }}
         spellCheck={false}
-        style={{ caretColor: 'white' }}
         placeholder="Enter your Java code with @Deadline annotations..."
       />
       
       {/* Syntax highlighted overlay */}
       <div 
         ref={highlightRef}
-        className="absolute top-4 left-16 right-4 bottom-4 pointer-events-none font-mono text-sm leading-6 whitespace-pre-wrap overflow-hidden z-10"
+        className="absolute top-4 bottom-4 right-4 pointer-events-none font-mono text-sm whitespace-pre-wrap overflow-hidden z-10"
+        style={{ 
+          left: `${lineNumberWidth + 16}px`,
+          lineHeight: '24px'
+        }}
         dangerouslySetInnerHTML={{ __html: highlightSyntax(code) }}
       />
       
