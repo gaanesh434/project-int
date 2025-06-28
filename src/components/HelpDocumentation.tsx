@@ -406,7 +406,7 @@ public void realTimeControlSystem() {
                 <div>
                   <h4 className="font-medium text-blue-400 mb-2">Key Metrics</h4>
                   <ul className="text-gray-300 space-y-1 text-sm">
-                    <li>• GC pause time (target: &lt;1ms)</li>
+                    <li>• GC pause time (target: <1ms)</li>
                     <li>• Heap usage percentage</li>
                     <li>• Off-heap allocation</li>
                     <li>• Objects allocated/freed</li>
@@ -447,8 +447,7 @@ public void realTimeControlSystem() {
                 </div>
               </div>
             </div>
-          </div>        )
-
+          </div>
         );
 
       case 'debugger':
