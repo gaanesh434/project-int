@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, BarChart, Bar, AreaChart, Area } from 'recharts';
 import { Activity, Clock, TrendingDown, AlertCircle, Play, Pause, Trash2, Zap, Database } from 'lucide-react';
-import { EnhancedJavaInterpreter } from '../interpreter/EnhancedJavaInterpreter';
+import { JavaInterpreter } from '../interpreter/core/JavaInterpreter';
 
 interface GCData {
   time: string;
@@ -17,7 +17,7 @@ interface GCData {
 const GCMonitor: React.FC = () => {
   const [gcData, setGcData] = useState<GCData[]>([]);
   const [isMonitoring, setIsMonitoring] = useState(false);
-  const [interpreter] = useState(() => new EnhancedJavaInterpreter());
+  const [interpreter] = useState(() => new JavaInterpreter());
   const [totalCollections, setTotalCollections] = useState(0);
   const [currentHeapUsage, setCurrentHeapUsage] = useState(0);
   const [currentOffHeapUsage, setCurrentOffHeapUsage] = useState(0);

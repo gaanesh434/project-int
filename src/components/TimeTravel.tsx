@@ -12,7 +12,7 @@ import {
   Bug,
   Code
 } from 'lucide-react';
-import { JavaInterpreter, ExecutionState } from '../interpreter/JavaInterpreter';
+import { JavaInterpreter, ExecutionState } from '../interpreter/core/JavaInterpreter';
 
 const TimeTravelDebugger: React.FC = () => {
   const [states, setStates] = useState<ExecutionState[]>([]);

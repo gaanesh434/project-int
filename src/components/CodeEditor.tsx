@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { Play, Square, RefreshCw, Clock, AlertTriangle, Trash2 } from 'lucide-react';
-import { JavaInterpreter } from '../interpreter/JavaInterpreter';
+import { JavaInterpreter } from '../interpreter/core/JavaInterpreter';
 
 const CodeEditor: React.FC = () => {
   const [code, setCode] = useState(`// IoT Sensor Example

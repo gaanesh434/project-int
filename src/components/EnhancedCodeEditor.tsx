@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { Play, Square, RefreshCw, Clock, AlertTriangle, Trash2, Shield, Rewind, FastForward } from 'lucide-react';
-import { EnhancedJavaInterpreter } from '../interpreter/EnhancedJavaInterpreter';
+import { JavaInterpreter } from '../interpreter/core/JavaInterpreter';
 
 const EnhancedCodeEditor: React.FC = () => {
   const [code, setCode] = useState(`// Enhanced IoT Sensor with Real-time Constraints
@@ -48,7 +48,7 @@ void dataTransmit(int temp, int humidity) {
 
   const [isRunning, setIsRunning] = useState(false);
   const [output, setOutput] = useState('');
-  const [interpreter] = useState(() => new EnhancedJavaInterpreter());
+  const [interpreter] = useState(() => new JavaInterpreter());
   const [executionStats, setExecutionStats] = useState({
     executionTime: 0,
     gcPauseTime: 0,
