@@ -10,7 +10,7 @@ import {
   CheckCircle,
   Cpu
 } from 'lucide-react';
-import { JavaInterpreter } from '../interpreter/JavaInterpreter';
+import { JavaInterpreter } from '../interpreter/core/JavaInterpreter';
 
 interface SensorReading {
   timestamp: string;
