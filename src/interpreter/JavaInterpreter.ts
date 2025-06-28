@@ -11,6 +11,7 @@ export interface ExecutionState {
   variables: Map<string, JavaValue>;
   stackTrace: string[];
   timestamp: number;
+  output: string;
 }
 
 export interface GCMetrics {
@@ -18,6 +19,8 @@ export interface GCMetrics {
   heapUsage: number;
   collections: number;
   timestamp: number;
+  allocatedObjects: number;
+  freedObjects: number;
 }
 
 export class JavaInterpreter {
@@ -31,32 +34,76 @@ export class JavaInterpreter {
   private callStack: string[] = [];
   private heapSize = 0;
   private maxHeapSize = 1024 * 1024; // 1MB
-  private gcThreshold = 0.8;
+  private gcThreshold = 0.7;
+  private output = '';
+  private allocatedObjects = 0;
+  private freedObjects = 0;
+  private objectRegistry = new Map<string, any>();
 
   constructor() {
-    // Built-in functions
+    this.initializeBuiltins();
+  }
+
+  private initializeBuiltins() {
+    // System.out.println
     this.globals.set('System.out.println', {
-      value: (args: JavaValue[]) => {
-        const output = args.map(arg => this.valueToString(arg.value)).join(' ');
+      value: (...args: any[]) => {
+        const output = args.map(arg => this.valueToString(arg)).join(' ');
+        this.output += output + '\n';
         console.log(output);
         return { value: null, type: 'void' };
       },
       type: 'function'
     });
 
+    // Math functions
     this.globals.set('Math.random', {
       value: () => ({ value: Math.random(), type: 'double' }),
       type: 'function'
     });
 
     this.globals.set('Math.floor', {
-      value: (args: JavaValue[]) => ({ value: Math.floor(args[0].value), type: 'int' }),
+      value: (arg: number) => ({ value: Math.floor(arg), type: 'int' }),
+      type: 'function'
+    });
+
+    this.globals.set('Math.max', {
+      value: (a: number, b: number) => ({ value: Math.max(a, b), type: 'double' }),
+      type: 'function'
+    });
+
+    this.globals.set('Math.min', {
+      value: (a: number, b: number) => ({ value: Math.min(a, b), type: 'double' }),
+      type: 'function'
+    });
+
+    // String methods
+    this.globals.set('String.valueOf', {
+      value: (arg: any) => ({ value: String(arg), type: 'String' }),
       type: 'function'
     });
   }
 
   interpret(source: string): { output: string; states: ExecutionState[]; gcMetrics: GCMetrics[]; violations: string[] } {
     try {
+      // Reset state
+      this.output = '';
+      this.executionStates = [];
+      this.gcMetrics = [];
+      this.deadlineViolations = [];
+      this.environment.clear();
+      this.classes.clear();
+      this.callStack = [];
+      this.currentLine = 0;
+      this.heapSize = 0;
+      this.allocatedObjects = 0;
+      this.freedObjects = 0;
+
+      // Handle simple expressions and statements without full class structure
+      if (!source.includes('class ') && !source.includes('public class')) {
+        return this.interpretSimpleCode(source);
+      }
+
       const parser = new JavaParser(source);
       const program = parser.parse();
       
@@ -65,18 +112,20 @@ export class JavaInterpreter {
         this.classes.set(classDecl.name, classDecl);
       }
 
-      // Find main method and execute
-      const output = this.executeProgram(program);
+      // Execute the program
+      this.executeProgram(program);
       
       return {
-        output,
+        output: this.output,
         states: this.executionStates,
         gcMetrics: this.gcMetrics,
         violations: this.deadlineViolations
       };
     } catch (error) {
+      const errorMsg = `Error: ${error instanceof Error ? error.message : String(error)}`;
+      this.output += errorMsg + '\n';
       return {
-        output: `Error: ${error instanceof Error ? error.message : String(error)}`,
+        output: this.output,
         states: this.executionStates,
         gcMetrics: this.gcMetrics,
         violations: this.deadlineViolations
@@ -84,23 +133,158 @@ export class JavaInterpreter {
     }
   }
 
-  private executeProgram(program: AST.Program): string {
-    let output = '';
+  private interpretSimpleCode(source: string): { output: string; states: ExecutionState[]; gcMetrics: GCMetrics[]; violations: string[] } {
+    // Handle simple statements like variable declarations, expressions, etc.
+    const lines = source.split('\n').filter(line => line.trim());
     
-    // Look for a class with methods to execute
-    for (const classDecl of program.classes) {
-      for (const method of classDecl.methods) {
-        if (method.name === 'processData' || method.name === 'main') {
-          output += this.executeMethod(classDecl, method);
+    for (let i = 0; i < lines.length; i++) {
+      const line = lines[i].trim();
+      this.currentLine = i + 1;
+      
+      try {
+        if (line.includes('System.out.println')) {
+          this.handlePrintStatement(line);
+        } else if (line.includes('=') && !line.includes('==')) {
+          this.handleAssignment(line);
+        } else if (line.includes('int ') || line.includes('double ') || line.includes('String ')) {
+          this.handleVariableDeclaration(line);
         }
+        
+        this.recordExecutionState();
+        this.maybePerformGC();
+      } catch (error) {
+        this.output += `Error on line ${i + 1}: ${error}\n`;
+      }
+    }
+
+    return {
+      output: this.output,
+      states: this.executionStates,
+      gcMetrics: this.gcMetrics,
+      violations: this.deadlineViolations
+    };
+  }
+
+  private handlePrintStatement(line: string) {
+    const match = line.match(/System\.out\.println\s*\(\s*(.+?)\s*\)/);
+    if (match) {
+      const content = match[1];
+      let output = '';
+      
+      if (content.startsWith('"') && content.endsWith('"')) {
+        // String literal
+        output = content.slice(1, -1);
+      } else if (content.includes('+')) {
+        // String concatenation
+        output = this.evaluateStringExpression(content);
+      } else {
+        // Variable or expression
+        const value = this.environment.get(content.trim());
+        output = value ? this.valueToString(value.value) : content;
+      }
+      
+      this.output += output + '\n';
+    }
+  }
+
+  private handleAssignment(line: string) {
+    const parts = line.split('=');
+    if (parts.length === 2) {
+      const varName = parts[0].trim();
+      const value = parts[1].trim().replace(';', '');
+      
+      let javaValue: JavaValue;
+      if (value.startsWith('"') && value.endsWith('"')) {
+        javaValue = { value: value.slice(1, -1), type: 'String' };
+      } else if (!isNaN(Number(value))) {
+        const num = Number(value);
+        javaValue = { value: num, type: Number.isInteger(num) ? 'int' : 'double' };
+      } else if (value === 'true' || value === 'false') {
+        javaValue = { value: value === 'true', type: 'boolean' };
+      } else {
+        // Expression or variable reference
+        const existingVar = this.environment.get(value);
+        javaValue = existingVar || { value: value, type: 'String' };
+      }
+      
+      this.environment.set(varName, javaValue);
+      this.allocateMemory(javaValue);
+    }
+  }
+
+  private handleVariableDeclaration(line: string) {
+    const match = line.match(/(int|double|String|boolean)\s+(\w+)(?:\s*=\s*(.+?))?;?$/);
+    if (match) {
+      const type = match[1];
+      const varName = match[2];
+      const initialValue = match[3];
+      
+      let javaValue: JavaValue;
+      if (initialValue) {
+        if (initialValue.startsWith('"') && initialValue.endsWith('"')) {
+          javaValue = { value: initialValue.slice(1, -1), type: 'String' };
+        } else if (!isNaN(Number(initialValue))) {
+          const num = Number(initialValue);
+          javaValue = { value: num, type: type };
+        } else if (initialValue === 'true' || initialValue === 'false') {
+          javaValue = { value: initialValue === 'true', type: 'boolean' };
+        } else {
+          javaValue = this.getDefaultValue(type);
+        }
+      } else {
+        javaValue = this.getDefaultValue(type);
+      }
+      
+      this.environment.set(varName, javaValue);
+      this.allocateMemory(javaValue);
+    }
+  }
+
+  private evaluateStringExpression(expr: string): string {
+    // Simple string concatenation evaluation
+    const parts = expr.split('+').map(p => p.trim());
+    let result = '';
+    
+    for (const part of parts) {
+      if (part.startsWith('"') && part.endsWith('"')) {
+        result += part.slice(1, -1);
+      } else {
+        const value = this.environment.get(part);
+        result += value ? this.valueToString(value.value) : part;
       }
     }
     
-    return output;
+    return result;
   }
 
-  private executeMethod(classDecl: AST.ClassDeclaration, method: AST.MethodDeclaration): string {
-    let output = '';
+  private executeProgram(program: AST.Program): void {
+    // Look for classes and execute their methods
+    for (const classDecl of program.classes) {
+      this.executeClass(classDecl);
+    }
+  }
+
+  private executeClass(classDecl: AST.ClassDeclaration): void {
+    // Initialize class fields
+    for (const field of classDecl.fields) {
+      if (field.initializer) {
+        const value = this.evaluateExpression(field.initializer);
+        this.environment.set(field.name, value);
+      } else {
+        this.environment.set(field.name, this.getDefaultValue(field.dataType));
+      }
+      this.allocateMemory(this.environment.get(field.name)!);
+    }
+
+    // Execute methods that should run automatically
+    for (const method of classDecl.methods) {
+      if (method.name === 'processData' || method.name === 'main' || method.name === 'run') {
+        this.executeMethod(classDecl, method);
+      }
+    }
+  }
+
+  private executeMethod(classDecl: AST.ClassDeclaration, method: AST.MethodDeclaration): void {
     this.callStack.push(`${classDecl.name}.${method.name}`);
     
     // Check for @Deadline annotation
@@ -109,16 +293,6 @@ export class JavaInterpreter {
     const startTime = performance.now();
     
     try {
-      // Initialize class fields
-      for (const field of classDecl.fields) {
-        if (field.initializer) {
-          const value = this.evaluateExpression(field.initializer);
-          this.environment.set(field.name, value);
-        } else {
-          this.environment.set(field.name, this.getDefaultValue(field.dataType));
-        }
-      }
-
       // Execute method body
       for (const statement of method.body) {
         this.currentLine = statement.line;
@@ -129,10 +303,7 @@ export class JavaInterpreter {
           break;
         }
         
-        // Trigger GC periodically
-        if (this.heapSize > this.maxHeapSize * this.gcThreshold) {
-          this.performGC();
-        }
+        this.maybePerformGC();
       }
       
       const executionTime = performance.now() - startTime;
@@ -147,8 +318,6 @@ export class JavaInterpreter {
     } finally {
       this.callStack.pop();
     }
-    
-    return output;
   }
 
   private executeStatement(statement: AST.Statement): JavaValue | null {
@@ -162,7 +331,7 @@ export class JavaInterpreter {
           ? this.evaluateExpression(varDecl.initializer)
           : this.getDefaultValue(varDecl.dataType);
         this.environment.set(varDecl.name, value);
-        this.heapSize += this.getValueSize(value);
+        this.allocateMemory(value);
         return null;
         
       case 'IfStatement':
@@ -177,12 +346,37 @@ export class JavaInterpreter {
         
       case 'WhileStatement':
         const whileStmt = statement as AST.WhileStatement;
-        while (true) {
+        let iterations = 0;
+        while (iterations < 1000) { // Prevent infinite loops
           const cond = this.evaluateExpression(whileStmt.condition);
           if (!this.isTruthy(cond.value)) break;
           
           const result = this.executeStatement(whileStmt.body);
           if (result && result.type === 'return') return result;
+          iterations++;
+        }
+        return null;
+        
+      case 'ForStatement':
+        const forStmt = statement as AST.ForStatement;
+        if (forStmt.init) {
+          this.executeStatement(forStmt.init);
+        }
+        
+        let forIterations = 0;
+        while (forIterations < 1000) { // Prevent infinite loops
+          if (forStmt.condition) {
+            const cond = this.evaluateExpression(forStmt.condition);
+            if (!this.isTruthy(cond.value)) break;
+          }
+          
+          const result = this.executeStatement(forStmt.body);
+          if (result && result.type === 'return') return result;
+          
+          if (forStmt.update) {
+            this.evaluateExpression(forStmt.update);
+          }
+          forIterations++;
         }
         return null;
         
@@ -303,15 +497,33 @@ export class JavaInterpreter {
   private evaluateCall(call: AST.CallExpression): JavaValue {
     if (call.callee.type === 'MemberExpression') {
       const member = call.callee as AST.MemberExpression;
-      const object = this.evaluateExpression(member.object);
-      const property = member.property as AST.Identifier;
       
       // Handle System.out.println
-      if (object.value === 'System.out' && property.name === 'println') {
-        const args = call.arguments.map(arg => this.evaluateExpression(arg));
-        const output = args.map(arg => this.valueToString(arg.value)).join(' ');
-        console.log(output);
-        return { value: null, type: 'void' };
+      if (member.object.type === 'MemberExpression') {
+        const systemOut = member.object as AST.MemberExpression;
+        if ((systemOut.object as AST.Identifier).name === 'System' && 
+            (systemOut.property as AST.Identifier).name === 'out' &&
+            (member.property as AST.Identifier).name === 'println') {
+          
+          const args = call.arguments.map(arg => this.evaluateExpression(arg));
+          const output = args.map(arg => this.valueToString(arg.value)).join(' ');
+          this.output += output + '\n';
+          return { value: null, type: 'void' };
+        }
+      }
+      
+      // Handle Math functions
+      if (member.object.type === 'Identifier') {
+        const objName = (member.object as AST.Identifier).name;
+        const methodName = (member.property as AST.Identifier).name;
+        
+        if (objName === 'Math') {
+          const mathFunc = this.globals.get(`Math.${methodName}`);
+          if (mathFunc && mathFunc.type === 'function') {
+            const args = call.arguments.map(arg => this.evaluateExpression(arg));
+            return mathFunc.value(...args.map(arg => arg.value));
+          }
+        }
       }
     }
     
@@ -321,11 +533,11 @@ export class JavaInterpreter {
       
       if (func && func.type === 'function') {
         const args = call.arguments.map(arg => this.evaluateExpression(arg));
-        return func.value(args);
+        return func.value(...args.map(arg => arg.value));
       }
     }
     
-    throw new Error(`Cannot call ${call.callee.type}`);
+    return { value: null, type: 'void' };
   }
 
   private evaluateMemberAccess(member: AST.MemberExpression): JavaValue {
@@ -353,7 +565,7 @@ export class JavaInterpreter {
       return { value: object.value[property], type: 'unknown' };
     }
     
-    throw new Error(`Cannot access property ${property} of ${object.type}`);
+    return { value: null, type: 'unknown' };
   }
 
   private getDefaultValue(type: string): JavaValue {
@@ -384,6 +596,16 @@ export class JavaInterpreter {
     return String(value);
   }
 
+  private allocateMemory(value: JavaValue): void {
+    const size = this.getValueSize(value);
+    this.heapSize += size;
+    this.allocatedObjects++;
+    
+    // Store object in registry for GC tracking
+    const objectId = `obj_${this.allocatedObjects}`;
+    this.objectRegistry.set(objectId, value);
+  }
+
   private getValueSize(value: JavaValue): number {
     switch (value.type) {
       case 'int':
@@ -404,7 +626,8 @@ export class JavaInterpreter {
       line: this.currentLine,
       variables: new Map(this.environment),
       stackTrace: [...this.callStack],
-      timestamp: Date.now()
+      timestamp: Date.now(),
+      output: this.output
     };
     
     this.executionStates.push(state);
@@ -415,12 +638,27 @@ export class JavaInterpreter {
     }
   }
 
+  private maybePerformGC(): void {
+    if (this.heapSize > this.maxHeapSize * this.gcThreshold) {
+      this.performGC();
+    }
+  }
+
   private performGC(): void {
     const startTime = performance.now();
     
-    // Simple mark and sweep simulation
-    const reachableSize = this.heapSize * 0.7; // 70% of objects are reachable
-    this.heapSize = reachableSize;
+    // Mark and sweep simulation
+    const reachableObjects = this.markReachableObjects();
+    const freedObjects = this.objectRegistry.size - reachableObjects.size;
+    
+    // Sweep unreachable objects
+    for (const [objectId, obj] of this.objectRegistry) {
+      if (!reachableObjects.has(objectId)) {
+        this.heapSize -= this.getValueSize(obj);
+        this.objectRegistry.delete(objectId);
+        this.freedObjects++;
+      }
+    }
     
     const pauseTime = performance.now() - startTime;
     
@@ -428,13 +666,39 @@ export class JavaInterpreter {
       pauseTime,
       heapUsage: (this.heapSize / this.maxHeapSize) * 100,
       collections: 1,
-      timestamp: Date.now()
+      timestamp: Date.now(),
+      allocatedObjects: this.allocatedObjects,
+      freedObjects: this.freedObjects
     });
     
     // Keep only last 50 GC metrics
     if (this.gcMetrics.length > 50) {
       this.gcMetrics.shift();
     }
+  }
+
+  private markReachableObjects(): Set<string> {
+    const reachable = new Set<string>();
+    
+    // Mark objects reachable from environment
+    for (const [name, value] of this.environment) {
+      for (const [objectId, obj] of this.objectRegistry) {
+        if (obj === value) {
+          reachable.add(objectId);
+        }
+      }
+    }
+    
+    // Mark objects reachable from globals
+    for (const [name, value] of this.globals) {
+      for (const [objectId, obj] of this.objectRegistry) {
+        if (obj === value) {
+          reachable.add(objectId);
+        }
+      }
+    }
+    
+    return reachable;
   }
 
   getExecutionStates(): ExecutionState[] {
@@ -447,5 +711,19 @@ export class JavaInterpreter {
 
   getDeadlineViolations(): string[] {
     return this.deadlineViolations;
+  }
+
+  // Method to trigger GC manually for monitoring
+  triggerGC(): void {
+    this.performGC();
+  }
+
+  // Method to get current heap status
+  getHeapStatus(): { used: number; max: number; percentage: number } {
+    return {
+      used: this.heapSize,
+      max: this.maxHeapSize,
+      percentage: (this.heapSize / this.maxHeapSize) * 100
+    };
   }
 }
