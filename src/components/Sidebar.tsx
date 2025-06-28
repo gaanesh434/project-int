@@ -6,6 +6,7 @@ import {
   Zap, 
   BarChart3, 
   Cpu,
+  TestTube,
   ChevronLeft,
   ChevronRight
 } from 'lucide-react';
@@ -25,6 +26,7 @@ const Sidebar: React.FC<SidebarProps> = ({ activeTab, setActiveTab, isOpen, onTo
     { id: 'wasm', label: 'WebAssembly', icon: Zap },
     { id: 'benchmarks', label: 'Benchmarks', icon: BarChart3 },
     { id: 'embedded', label: 'IoT Simulator', icon: Cpu },
+    { id: 'tests', label: 'Test Suite', icon: TestTube },
   ];
 
   return (

@@ -7,8 +7,9 @@ import TimeTravelDebugger from './components/TimeTravel';
 import WasmDemo from './components/WasmDemo';
 import Benchmarks from './components/Benchmarks';
 import EmbeddedSimulator from './components/EmbeddedSimulator';
+import TestRunner from './tests/TestRunner';
 
-type ActiveTab = 'editor' | 'gc' | 'debugger' | 'wasm' | 'benchmarks' | 'embedded';
+type ActiveTab = 'editor' | 'gc' | 'debugger' | 'wasm' | 'benchmarks' | 'embedded' | 'tests';
 
 function App() {
   const [activeTab, setActiveTab] = useState<ActiveTab>('editor');
@@ -28,6 +29,8 @@ function App() {
         return <Benchmarks />;
       case 'embedded':
         return <EmbeddedSimulator />;
+      case 'tests':
+        return <TestRunner />;
       default:
         return <RealTimeCodeEditor />;
     }
