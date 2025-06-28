@@ -3,7 +3,7 @@
  * Tests end-to-end functionality combining code editor, interpreter, and GC monitor
  */
 
-import { EnhancedJavaInterpreter } from '../interpreter/EnhancedJavaInterpreter';
+import { JavaInterpreter } from '../interpreter/core/JavaInterpreter';
 import { CodeEditorTestSuite } from './CodeEditorTests';
 import { GCMonitorTestSuite } from './GCMonitorTests';
 
@@ -310,7 +310,7 @@ GC collections: 3`,
 
     console.log("🧪 Running Integration Test Suite...\n");
 
-    const interpreter = new EnhancedJavaInterpreter();
+    const interpreter = new JavaInterpreter();
 
     // Run IoT sensor tests
     const iotTests = this.getIoTSensorTests();
@@ -383,7 +383,7 @@ GC collections: 3`,
     return { passed, failed, results };
   }
 
-  private static async runIntegrationTest(interpreter: EnhancedJavaInterpreter, test: IntegrationTestCase): Promise<any> {
+  private static async runIntegrationTest(interpreter: JavaInterpreter, test: IntegrationTestCase): Promise<any> {
     // Execute the test code
     const startTime = performance.now();
     const result = interpreter.interpret(test.code);

@@ -3,7 +3,7 @@
  * Tests dynamic metrics, GC triggering, and off-heap memory optimization
  */
 
-import { EnhancedJavaInterpreter } from '../interpreter/EnhancedJavaInterpreter';
+import { JavaInterpreter } from '../interpreter/core/JavaInterpreter';
 
 export interface GCTestCase {
   name: string;
@@ -282,7 +282,7 @@ System.out.println("Total time: " + (endTime - startTime) + "ms");`,
 
     console.log("🧪 Running GC Monitor Test Suite...\n");
 
-    const interpreter = new EnhancedJavaInterpreter();
+    const interpreter = new JavaInterpreter();
 
     // Test dynamic metrics
     const dynamicTests = this.getDynamicMetricsTests();
@@ -358,7 +358,7 @@ System.out.println("Total time: " + (endTime - startTime) + "ms");`,
     return { passed, failed, results };
   }
 
-  private static async testDynamicMetrics(interpreter: EnhancedJavaInterpreter, test: GCTestCase): Promise<any> {
+  private static async testDynamicMetrics(interpreter: JavaInterpreter, test: GCTestCase): Promise<any> {
     // Execute the test code
     const result = interpreter.interpret(test.code);
     const gcMetrics = interpreter.getGCMetrics();
@@ -390,7 +390,7 @@ System.out.println("Total time: " + (endTime - startTime) + "ms");`,
     return { success, metrics, expected };
   }
 
-  private static async testGCTrigger(interpreter: EnhancedJavaInterpreter, test: GCTestCase): Promise<any> {
+  private static async testGCTrigger(interpreter: JavaInterpreter, test: GCTestCase): Promise<any> {
     // Execute code and capture initial state
     interpreter.interpret(test.code);
     const initialMetrics = interpreter.getGCMetrics();
@@ -417,7 +417,7 @@ System.out.println("Total time: " + (endTime - startTime) + "ms");`,
     return { success, metrics };
   }
 
-  private static async testOffHeapOptimization(interpreter: EnhancedJavaInterpreter, test: GCTestCase): Promise<any> {
+  private static async testOffHeapOptimization(interpreter: JavaInterpreter, test: GCTestCase): Promise<any> {
     // Execute the test code
     const result = interpreter.interpret(test.code);
     const gcMetrics = interpreter.getGCMetrics();
