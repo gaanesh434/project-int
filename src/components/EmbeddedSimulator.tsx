@@ -8,7 +8,9 @@ import {
   Battery, 
   AlertTriangle,
   CheckCircle,
-  Cpu
+  Cpu,
+  Play,
+  Pause
 } from 'lucide-react';
 import { JavaInterpreter } from '../interpreter/core/JavaInterpreter';
 
@@ -27,68 +29,65 @@ const EmbeddedSimulator: React.FC = () => {
   const [deadlineViolations, setDeadlineViolations] = useState(0);
   const [systemStatus, setSystemStatus] = useState('idle');
   const [interpreter] = useState(() => new JavaInterpreter());
+  const [executionCount, setExecutionCount] = useState(0);
 
-  // Real IoT sensor simulation code
-  const iotSensorCode = `
-// IoT Sensor Node Simulation
-int temperature = 25;
-int humidity = 60;
-boolean isActive = true;
-int readings = 0;
-
-System.out.println("IoT Sensor Node Starting...");
-System.out.println("Initial temperature: " + temperature + "°C");
-System.out.println("Initial humidity: " + humidity + "%");
-
-// Simulate sensor readings with real logic
-for (int i = 0; i < 5; i++) {
-    // Simulate temperature fluctuation based on time and environment
-    int tempChange = Math.floor(Math.random() * 10) - 5;
-    temperature = temperature + tempChange;
+  // Real IoT sensor simulation code that actually executes
+  const iotSensorCode = `@Deadline(ms=8)
+public void sensorProcessing() {
+    int temperature = 25;
+    int humidity = 60;
+    int pressure = 1013;
+    boolean alertTriggered = false;
     
-    // Humidity changes inversely with temperature
-    if (temperature > 30) {
-        humidity = humidity - 2;
-    } else if (temperature < 20) {
-        humidity = humidity + 3;
+    System.out.println("IoT Sensor Node Starting...");
+    System.out.println("Real-time deadline: 8ms");
+    
+    // Simulate 5 sensor readings
+    for (int i = 0; i < 5; i++) {
+        // Realistic sensor fluctuation
+        temperature = temperature + Math.floor(Math.random() * 8) - 4;
+        humidity = humidity + Math.floor(Math.random() * 6) - 3;
+        pressure = pressure + Math.floor(Math.random() * 10) - 5;
+        
+        System.out.println("Reading " + (i + 1) + ":");
+        System.out.println("  Temperature: " + temperature + "°C");
+        System.out.println("  Humidity: " + humidity + "%");
+        System.out.println("  Pressure: " + pressure + " hPa");
+        
+        // Safety threshold checking
+        if (temperature > 35) {
+            System.out.println("  CRITICAL: Temperature too high!");
+            alertTriggered = true;
+        } else if (temperature < 10) {
+            System.out.println("  WARNING: Temperature too low!");
+        }
+        
+        if (humidity < 30) {
+            System.out.println("  WARNING: Low humidity detected!");
+        } else if (humidity > 80) {
+            System.out.println("  WARNING: High humidity detected!");
+        }
+        
+        if (pressure < 1000) {
+            System.out.println("  INFO: Low pressure system");
+        } else if (pressure > 1025) {
+            System.out.println("  INFO: High pressure system");
+        }
+        
+        // Data transmission simulation
+        String sensorData = "T:" + temperature + ",H:" + humidity + ",P:" + pressure;
+        System.out.println("  Transmitting: " + sensorData);
     }
     
-    readings = readings + 1;
-    
-    System.out.println("Reading " + (i + 1) + ":");
-    System.out.println("  Temperature: " + temperature + "°C");
-    System.out.println("  Humidity: " + humidity + "%");
-    
-    // Real threshold checking logic
-    if (temperature > 35) {
-        System.out.println("  CRITICAL: Temperature too high! Activating cooling.");
-        isActive = false;
-    } else if (temperature < 10) {
-        System.out.println("  WARNING: Temperature too low! Check heating.");
+    // Final status
+    if (alertTriggered) {
+        System.out.println("Sensor session completed with ALERTS");
+    } else {
+        System.out.println("Sensor session completed NORMALLY");
     }
     
-    if (humidity < 30) {
-        System.out.println("  WARNING: Low humidity detected!");
-    } else if (humidity > 80) {
-        System.out.println("  WARNING: High humidity detected!");
-    }
-    
-    // Simulate processing time and resource usage
-    int processingTime = Math.floor(Math.random() * 5) + 1;
-    System.out.println("  Processing time: " + processingTime + "ms");
-}
-
-// Final status report
-System.out.println("Sensor readings completed: " + readings + " total");
-if (isActive) {
-    System.out.println("System status: OPERATIONAL");
-} else {
-    System.out.println("System status: SHUTDOWN (safety protocol)");
-}
-
-System.out.println("Final temperature: " + temperature + "°C");
-System.out.println("Final humidity: " + humidity + "%");
-`;
+    System.out.println("Final readings - T:" + temperature + "°C, H:" + humidity + "%, P:" + pressure + "hPa");
+}`;
 
   useEffect(() => {
     let interval: NodeJS.Timeout;
@@ -98,26 +97,25 @@ System.out.println("Final humidity: " + humidity + "%");
         try {
           // Execute the real IoT sensor code
           const result = interpreter.interpret(iotSensorCode);
+          setExecutionCount(prev => prev + 1);
           
-          // Extract real values from the interpreter's environment
+          // Extract real values from the interpreter's execution
           const variables = interpreter.getExecutionStates();
           let currentTemp = 25;
           let currentHumidity = 60;
+          let currentPressure = 1013;
           
           if (variables.length > 0) {
+            // Get the latest execution state
             const latestState = variables[variables.length - 1];
             const tempVar = latestState.variables.get('temperature');
             const humidityVar = latestState.variables.get('humidity');
+            const pressureVar = latestState.variables.get('pressure');
             
             if (tempVar) currentTemp = Number(tempVar.value);
             if (humidityVar) currentHumidity = Number(humidityVar.value);
+            if (pressureVar) currentPressure = Number(pressureVar.value);
           }
-          
-          // Calculate realistic pressure based on temperature and humidity
-          const basePressure = 1013.25;
-          const tempEffect = (currentTemp - 20) * 0.5;
-          const humidityEffect = (currentHumidity - 50) * 0.1;
-          const pressure = basePressure + tempEffect + humidityEffect + (Math.random() - 0.5) * 2;
           
           // Calculate CPU and memory usage based on actual interpreter activity
           const heapStatus = interpreter.getHeapStatus();
@@ -131,25 +129,23 @@ System.out.println("Final humidity: " + humidity + "%");
             timestamp: now.toLocaleTimeString(),
             temperature: Number(currentTemp),
             humidity: Number(currentHumidity),
-            pressure: Number(pressure),
-            cpuUsage: Number(cpuUsage),
-            memoryUsage: Number(memoryUsage),
+            pressure: Number(currentPressure),
+            cpuUsage: Number(cpuUsage.toFixed(1)),
+            memoryUsage: Number(memoryUsage.toFixed(1)),
           };
 
           setSensorData(prev => [...prev.slice(-19), newReading]);
           
-          // Check for deadline violations based on actual interpreter performance
+          // Check for deadline violations from actual interpreter
           const violations = interpreter.getDeadlineViolations();
-          if (violations.length > deadlineViolations) {
-            setDeadlineViolations(violations.length);
-          }
+          setDeadlineViolations(violations.length);
 
           setSystemStatus('running');
         } catch (error) {
           console.error('IoT simulation error:', error);
           setSystemStatus('error');
         }
-      }, 3000);
+      }, 4000); // Execute every 4 seconds
     } else {
       setSystemStatus('idle');
     }
@@ -157,7 +153,7 @@ System.out.println("Final humidity: " + humidity + "%");
     return () => {
       if (interval) clearInterval(interval);
     };
-  }, [isRunning, interpreter, deadlineViolations]);
+  }, [isRunning, interpreter]);
 
   const currentReading = sensorData[sensorData.length - 1];
 
@@ -174,7 +170,7 @@ System.out.println("Final humidity: " + humidity + "%");
       <div className="flex items-center justify-between">
         <div>
           <h1 className="text-2xl font-bold text-white">IoT Embedded Simulator</h1>
-          <p className="text-gray-400">Real Java execution on embedded systems with actual sensor logic</p>
+          <p className="text-gray-400">Real Java execution on embedded systems with actual sensor data from interpreter</p>
         </div>
         
         <div className="flex items-center space-x-4">
@@ -186,18 +182,36 @@ System.out.println("Final humidity: " + humidity + "%");
             <span className="text-gray-300">{systemStatus}</span>
           </div>
           
+          <div className="text-sm text-gray-400">
+            Executions: {executionCount}
+          </div>
+          
           <button
             onClick={() => setIsRunning(!isRunning)}
-            className={`px-4 py-2 rounded-lg transition-colors ${
+            className={`flex items-center space-x-2 px-4 py-2 rounded-lg transition-colors ${
               isRunning 
                 ? 'bg-red-600 hover:bg-red-500' 
                 : 'bg-green-600 hover:bg-green-500'
             }`}
           >
-            {isRunning ? 'Stop Simulation' : 'Start Simulation'}
+            {isRunning ? <Pause className="w-4 h-4" /> : <Play className="w-4 h-4" />}
+            <span>{isRunning ? 'Stop Simulation' : 'Start Simulation'}</span>
           </button>
         </div>
       </div>
+
+      {/* Live Status */}
+      {isRunning && (
+        <div className="bg-green-900/20 border border-green-500 rounded-lg p-4">
+          <div className="flex items-center space-x-2 mb-2">
+            <Activity className="w-5 h-5 text-green-400 animate-pulse" />
+            <span className="text-green-400 font-medium">Live IoT Simulation Active</span>
+          </div>
+          <div className="text-sm text-gray-300">
+            Executing real Java sensor code every 4 seconds • Data from actual interpreter execution • {sensorData.length} data points collected
+          </div>
+        </div>
+      )}
 
       {/* Current Sensor Readings - Real Data from Interpreter */}
       <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
@@ -209,11 +223,14 @@ System.out.println("Final humidity: " + humidity + "%");
             }`} />
             <div>
               <div className="text-2xl font-bold text-white">
-                {currentReading ? `${Number(currentReading.temperature).toFixed(1)}°C` : '--'}
+                {currentReading ? `${Number(currentReading.temperature).toFixed(0)}°C` : '--'}
               </div>
               <div className="text-sm text-gray-400">Temperature</div>
               {currentReading && currentReading.temperature > 35 && (
                 <div className="text-xs text-red-400">CRITICAL</div>
+              )}
+              {currentReading && currentReading.temperature < 10 && (
+                <div className="text-xs text-blue-400">LOW</div>
               )}
             </div>
           </div>
@@ -227,7 +244,7 @@ System.out.println("Final humidity: " + humidity + "%");
             }`} />
             <div>
               <div className="text-2xl font-bold text-white">
-                {currentReading ? `${Number(currentReading.humidity).toFixed(1)}%` : '--'}
+                {currentReading ? `${Number(currentReading.humidity).toFixed(0)}%` : '--'}
               </div>
               <div className="text-sm text-gray-400">Humidity</div>
               {currentReading && (currentReading.humidity < 30 || currentReading.humidity > 80) && (
@@ -245,7 +262,7 @@ System.out.println("Final humidity: " + humidity + "%");
                 {currentReading ? `${Number(currentReading.pressure).toFixed(0)} hPa` : '--'}
               </div>
               <div className="text-sm text-gray-400">Pressure</div>
-              <div className="text-xs text-green-400">Calculated</div>
+              <div className="text-xs text-green-400">From interpreter</div>
             </div>
           </div>
         </div>
@@ -289,7 +306,7 @@ System.out.println("Final humidity: " + humidity + "%");
                   '0.0ms'
                 }
               </div>
-              <div className="text-sm text-gray-400">Avg Latency</div>
+              <div className="text-sm text-gray-400">GC Latency</div>
               <div className="text-xs text-blue-400">Real GC</div>
             </div>
           </div>
@@ -307,10 +324,10 @@ System.out.println("Final humidity: " + humidity + "%");
         </div>
       </div>
 
-      {/* Real-time Charts with Actual Data */}
+      {/* Real-time Charts with Actual Data from Interpreter */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
         <div className="bg-gray-800 rounded-xl p-6 border border-gray-700">
-          <h3 className="text-lg font-semibold text-white mb-4">Environmental Sensors (Real Data)</h3>
+          <h3 className="text-lg font-semibold text-white mb-4">Environmental Sensors (Real Interpreter Data)</h3>
           <ResponsiveContainer width="100%" height={300}>
             <LineChart data={sensorData}>
               <CartesianGrid strokeDasharray="3 3" stroke="#374151" />
@@ -325,10 +342,11 @@ System.out.println("Final humidity: " + humidity + "%");
               />
               <Line type="monotone" dataKey="temperature" stroke="#EF4444" strokeWidth={2} name="Temperature (°C)" />
               <Line type="monotone" dataKey="humidity" stroke="#3B82F6" strokeWidth={2} name="Humidity (%)" />
+              <Line type="monotone" dataKey="pressure" stroke="#10B981" strokeWidth={2} name="Pressure (hPa)" />
             </LineChart>
           </ResponsiveContainer>
           <div className="text-sm text-gray-400 mt-2">
-            Data generated by actual Java interpreter execution with real sensor logic
+            Data generated by actual Java interpreter execution with real sensor variables
           </div>
         </div>
 
@@ -384,7 +402,7 @@ System.out.println("Final humidity: " + humidity + "%");
           {iotSensorCode}
         </pre>
         <div className="text-sm text-gray-400 mt-2">
-          This actual Java code runs in the interpreter every 3 seconds, generating real sensor data and system metrics.
+          This actual Java code runs in the interpreter every 4 seconds, generating real sensor data and system metrics from variable values.
         </div>
       </div>
     </div>

@@ -407,39 +407,36 @@ export class JavaInterpreter {
   }
 
   private evaluateStringConcatenation(expression: string): string {
-    // Simple character-by-character parser
-    let result = '';
-    let currentPart = '';
-    let inString = false;
+    // Simple and safe string concatenation
+    const parts = [];
+    let current = '';
+    let inQuotes = false;
     let i = 0;
     
     while (i < expression.length) {
       const char = expression[i];
       
       if (char === '"' && (i === 0 || expression[i - 1] !== '\\')) {
-        inString = !inString;
-        currentPart += char;
-      } else if (char === '+' && !inString) {
-        // Process the current part
-        const part = currentPart.trim();
-        if (part.startsWith('"') && part.endsWith('"')) {
-          result += part.slice(1, -1);
-        } else if (/^\d+$/.test(part)) {
-          result += part;
-        } else {
-          const variable = this.variables.get(part);
-          result += variable ? String(variable.value) : part;
+        inQuotes = !inQuotes;
+        current += char;
+      } else if (char === '+' && !inQuotes) {
+        if (current.trim()) {
+          parts.push(current.trim());
         }
-        currentPart = '';
+        current = '';
       } else {
-        currentPart += char;
+        current += char;
       }
       i++;
     }
     
-    // Process the last part
-    if (currentPart.trim()) {
-      const part = currentPart.trim();
+    if (current.trim()) {
+      parts.push(current.trim());
+    }
+    
+    // Evaluate each part and concatenate
+    let result = '';
+    for (const part of parts) {
       if (part.startsWith('"') && part.endsWith('"')) {
         result += part.slice(1, -1);
       } else if (/^\d+$/.test(part)) {
