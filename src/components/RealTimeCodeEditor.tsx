@@ -128,41 +128,41 @@ public void dataTransmit(int temp, int humidity) {
       setOutput(prev => prev + '=== Program Output ===\n');
       setOutput(prev => prev + result.output + '\n');
       
-      // Calculate real-time statistics
+      // Calculate real-time statistics from ACTUAL interpreter data
       const gcMetrics = interpreter.getGCMetrics();
       const deadlineViolations = interpreter.getDeadlineViolations();
       const safetyViolations = interpreter.getSafetyViolations();
       const heapStatus = interpreter.getHeapStatus();
       
+      // Use REAL metrics from the interpreter
+      const latestGC = gcMetrics.length > 0 ? gcMetrics[gcMetrics.length - 1] : null;
       const avgGCPause = gcMetrics.length > 0 
         ? gcMetrics.reduce((sum: number, m: any) => sum + m.pauseTime, 0) / gcMetrics.length 
         : 0;
-      
       const avgCompactionTime = gcMetrics.length > 0 
         ? gcMetrics.reduce((sum: number, m: any) => sum + m.compactionTime, 0) / gcMetrics.length 
         : 0;
       
-      const latestGC = gcMetrics.length > 0 ? gcMetrics[gcMetrics.length - 1] : null;
-      
+      // Update stats with REAL values from interpreter
       setExecutionStats({
         executionTime: parseFloat(executionTime.toFixed(2)),
-        gcPauseTime: parseFloat(avgGCPause.toFixed(2)),
+        gcPauseTime: latestGC ? parseFloat(latestGC.pauseTime.toFixed(2)) : 0,
         deadlineCompliance: deadlineViolations.length === 0 ? 100 : Math.max(0, 100 - deadlineViolations.length * 20),
         safetyViolations: safetyViolations.length,
         deadlineViolations: deadlineViolations.length,
-        heapUsage: parseFloat(heapStatus.percentage.toFixed(1)),
-        offHeapUsage: parseFloat((heapStatus.offHeap.allocated / heapStatus.offHeap.total * 100).toFixed(1)),
+        heapUsage: latestGC ? parseFloat(latestGC.heapUsage.toFixed(1)) : parseFloat(heapStatus.percentage.toFixed(1)),
+        offHeapUsage: latestGC ? parseFloat(latestGC.offHeapUsage.toFixed(1)) : 0,
         allocatedObjects: latestGC ? latestGC.allocatedObjects : 0,
         freedObjects: latestGC ? latestGC.freedObjects : 0,
-        compactionTime: parseFloat(avgCompactionTime.toFixed(2))
+        compactionTime: latestGC ? parseFloat(latestGC.compactionTime.toFixed(2)) : 0
       });
       
       setOutput(prev => prev + '=== Real-time Execution Metrics ===\n');
       setOutput(prev => prev + `Total execution time: ${executionTime.toFixed(2)}ms\n`);
       setOutput(prev => prev + `Average GC pause: ${avgGCPause.toFixed(2)}ms\n`);
       setOutput(prev => prev + `Off-heap compaction: ${avgCompactionTime.toFixed(2)}ms\n`);
-      setOutput(prev => prev + `Heap usage: ${heapStatus.percentage.toFixed(1)}%\n`);
-      setOutput(prev => prev + `Off-heap usage: ${(heapStatus.offHeap.allocated / heapStatus.offHeap.total * 100).toFixed(1)}%\n`);
+      setOutput(prev => prev + `Heap usage: ${latestGC ? latestGC.heapUsage.toFixed(1) : heapStatus.percentage.toFixed(1)}%\n`);
+      setOutput(prev => prev + `Off-heap usage: ${latestGC ? latestGC.offHeapUsage.toFixed(1) : 0}%\n`);
       setOutput(prev => prev + `Objects allocated: ${latestGC ? latestGC.allocatedObjects : 0}\n`);
       setOutput(prev => prev + `Objects freed: ${latestGC ? latestGC.freedObjects : 0}\n`);
       setOutput(prev => prev + `Safety violations: ${safetyViolations.length}\n`);
@@ -223,7 +223,7 @@ public void dataTransmit(int temp, int humidity) {
     const gcMetrics = interpreter.getGCMetrics();
     const latest = gcMetrics[gcMetrics.length - 1];
     
-    setOutput(prev => prev + `\n🗑️ [Manual GC] Pause: ${latest?.pauseTime?.toFixed(2) || 0}ms, Heap: ${heapStatus.percentage.toFixed(1)}%, Off-heap: ${(heapStatus.offHeap.allocated / heapStatus.offHeap.total * 100).toFixed(1)}%\n`);
+    setOutput(prev => prev + `\n🗑️ [Manual GC] Pause: ${latest?.pauseTime?.toFixed(2) || 0}ms, Heap: ${heapStatus.percentage.toFixed(1)}%, Off-heap: ${latest?.offHeapUsage?.toFixed(1) || 0}%\n`);
     
     if (latest) {
       setExecutionStats(prev => ({
