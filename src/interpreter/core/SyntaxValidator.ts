@@ -11,7 +11,7 @@ export interface SyntaxError {
 export class SyntaxValidator {
   private tokens: Token[];
   private errors: SyntaxError[] = [];
-  private processedLines = new Set<number>(); // Track processed lines to avoid duplicates
+  private processedLines = new Set<number>();
 
   constructor(tokens: Token[]) {
     this.tokens = tokens;
@@ -22,10 +22,12 @@ export class SyntaxValidator {
     this.processedLines.clear();
     
     this.validateDeadlineAnnotations();
-    this.validateSemicolons();
     this.validateDivisionByZero();
     this.validateUnsafeOperations();
     this.validateBraceMatching();
+    
+    // Only add a few missing semicolon warnings, not for every line
+    this.validateCriticalSemicolons();
     
     return this.errors;
   }
@@ -35,7 +37,6 @@ export class SyntaxValidator {
       const token = this.tokens[i];
       
       if (token.type === TokenType.DEADLINE) {
-        // Check for proper @Deadline syntax: @Deadline(ms=value)
         if (i + 1 < this.tokens.length && this.tokens[i + 1].type === TokenType.LEFT_PAREN) {
           const params = this.parseAnnotationParameters(i + 1);
           
@@ -60,10 +61,14 @@ export class SyntaxValidator {
     }
   }
 
-  private validateSemicolons(): void {
+  private validateCriticalSemicolons(): void {
     const checkedLines = new Set<number>();
+    let semicolonWarnings = 0;
+    const maxSemicolonWarnings = 3; // Limit to 3 warnings max
     
     for (let i = 0; i < this.tokens.length - 1; i++) {
+      if (semicolonWarnings >= maxSemicolonWarnings) break;
+      
       const token = this.tokens[i];
       const nextToken = this.tokens[i + 1];
       
@@ -72,26 +77,40 @@ export class SyntaxValidator {
         continue;
       }
       
-      // Check for missing semicolons after statements
-      if (this.isStatementEnd(token) && 
+      // Only check for missing semicolons on variable declarations and assignments
+      if ((token.type === TokenType.NUMBER || token.type === TokenType.IDENTIFIER) && 
           nextToken.type !== TokenType.SEMICOLON && 
           nextToken.type !== TokenType.RIGHT_BRACE &&
           nextToken.type !== TokenType.EOF &&
-          nextToken.line !== token.line && // Different lines
-          !this.isControlStructure(token)) {
+          nextToken.line !== token.line &&
+          this.isStatementLine(i)) {
         
-        // Skip if it's a comment, annotation, or method declaration
-        if (token.type !== TokenType.COMMENT && 
-            !token.value.startsWith('@') &&
-            !token.value.startsWith('//') &&
-            !this.isMethodDeclaration(i)) {
-          
-          this.addError(token.line, token.column, 
-            'Missing semicolon', 'warning', 'low');
-          checkedLines.add(token.line);
-        }
+        this.addError(token.line, token.column, 
+          'Missing semicolon', 'warning', 'low');
+        checkedLines.add(token.line);
+        semicolonWarnings++;
       }
     }
+  }
+
+  private isStatementLine(tokenIndex: number): boolean {
+    // Check if this line contains a variable declaration or assignment
+    const token = this.tokens[tokenIndex];
+    const line = token.line;
+    
+    // Look for variable declarations or assignments on this line
+    for (let i = Math.max(0, tokenIndex - 5); i < Math.min(this.tokens.length, tokenIndex + 5); i++) {
+      if (this.tokens[i].line !== line) continue;
+      
+      if (this.tokens[i].type === TokenType.INT || 
+          this.tokens[i].type === TokenType.STRING_TYPE ||
+          this.tokens[i].type === TokenType.BOOLEAN_TYPE ||
+          this.tokens[i].type === TokenType.ASSIGN) {
+        return true;
+      }
+    }
+    
+    return false;
   }
 
   private validateDivisionByZero(): void {
@@ -181,50 +200,10 @@ export class SyntaxValidator {
     return params;
   }
 
-  private isStatementEnd(token: Token): boolean {
-    return token.type === TokenType.IDENTIFIER || 
-           token.type === TokenType.NUMBER || 
-           token.type === TokenType.STRING || 
-           token.type === TokenType.RIGHT_PAREN;
-  }
-
-  private isControlStructure(token: Token): boolean {
-    return token.type === TokenType.IF || 
-           token.type === TokenType.WHILE || 
-           token.type === TokenType.FOR || 
-           token.type === TokenType.ELSE;
-  }
-
   private isMatchingPair(open: TokenType, close: TokenType): boolean {
     return (open === TokenType.LEFT_BRACE && close === TokenType.RIGHT_BRACE) ||
            (open === TokenType.LEFT_PAREN && close === TokenType.RIGHT_PAREN) ||
            (open === TokenType.LEFT_BRACKET && close === TokenType.RIGHT_BRACKET);
-  }
-
-  private isMethodDeclaration(index: number): boolean {
-    // Check if this is part of a method declaration
-    let i = index;
-    
-    // Look backwards for method keywords
-    while (i >= 0 && this.tokens[i].line === this.tokens[index].line) {
-      if (this.tokens[i].type === TokenType.PUBLIC || 
-          this.tokens[i].type === TokenType.PRIVATE ||
-          this.tokens[i].type === TokenType.VOID) {
-        return true;
-      }
-      i--;
-    }
-    
-    // Look forwards for opening parenthesis
-    i = index;
-    while (i < this.tokens.length && this.tokens[i].line === this.tokens[index].line) {
-      if (this.tokens[i].type === TokenType.LEFT_PAREN) {
-        return true;
-      }
-      i++;
-    }
-    
-    return false;
   }
 
   private addError(line: number, column: number, message: string, type: 'error' | 'warning', severity: 'low' | 'medium' | 'high' | 'critical'): void {
