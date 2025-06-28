@@ -1,4 +1,4 @@
-import React, { useRef, useEffect } from 'react';
+import React, { useRef } from 'react';
 
 interface SyntaxHighlighterProps {
   code: string;
@@ -29,8 +29,6 @@ export const SyntaxHighlighter: React.FC<SyntaxHighlighterProps> = ({ code, onCh
       const comments = /\/\/.*$/g;
       // Method calls
       const methods = /(\w+)\s*\(/g;
-      // Operators
-      const operators = /([+\-*/%=<>!&|]+)/g;
 
       // Collect all matches with their positions
       const matches: Array<{ start: number; end: number; type: string; match: string }> = [];
@@ -125,13 +123,13 @@ export const SyntaxHighlighter: React.FC<SyntaxHighlighterProps> = ({ code, onCh
       if (tokens.length === 0) {
         tokens.push(
           <span key={`${lineIndex}-0`} className="text-gray-100">
-            {line}
+            {line || ' '}
           </span>
         );
       }
       
       return (
-        <div key={lineIndex} className="leading-6">
+        <div key={lineIndex} className="leading-6 min-h-[24px]">
           {tokens}
         </div>
       );
@@ -152,60 +150,44 @@ export const SyntaxHighlighter: React.FC<SyntaxHighlighterProps> = ({ code, onCh
         return 'text-gray-500 italic';
       case 'method':
         return 'text-cyan-400';
-      case 'operator':
-        return 'text-red-400';
       default:
         return 'text-gray-100';
     }
   };
 
-  const lines = code.split('\n');
-  
   return (
     <div className="relative">
-      {/* Line numbers */}
-      <div className="absolute left-0 top-0 w-12 bg-gray-900 h-full border-r border-gray-600 flex flex-col text-xs text-gray-500 z-10">
-        {lines.map((_, index) => {
-          const lineNumber = index + 1;
-          const hasError = errors.some(error => error.line === lineNumber);
-          return (
-            <div 
-              key={index} 
-              className={`h-6 flex items-center justify-center ${hasError ? 'bg-red-900/30 text-red-400' : ''}`}
-            >
-              {lineNumber}
-            </div>
-          );
-        })}
-      </div>
-      
       {/* Code input textarea */}
       <textarea
         ref={textareaRef}
         value={code}
         onChange={(e) => onChange(e.target.value)}
-        className="w-full h-96 bg-transparent text-transparent caret-white font-mono text-sm p-4 pl-16 rounded-lg border border-gray-600 focus:border-blue-500 focus:outline-none resize-none relative z-20"
+        className="w-full h-96 bg-transparent text-transparent caret-white font-mono text-sm p-4 rounded-lg border border-gray-600 focus:border-blue-500 focus:outline-none resize-none relative z-20"
         spellCheck={false}
         style={{ caretColor: 'white' }}
+        placeholder="Enter your Java code with @Deadline annotations..."
       />
       
       {/* Syntax highlighted overlay */}
       <div 
         ref={highlightRef}
-        className="absolute top-4 left-16 right-4 bottom-4 pointer-events-none font-mono text-sm leading-6 whitespace-pre-wrap overflow-hidden z-10"
+        className="absolute top-4 left-4 right-4 bottom-4 pointer-events-none font-mono text-sm leading-6 whitespace-pre-wrap overflow-hidden z-10"
       >
         {highlightSyntax(code)}
       </div>
       
-      {/* Error indicators */}
-      {errors.map((error, index) => (
-        <div
-          key={index}
-          className={`absolute right-2 w-3 h-6 rounded ${error.type === 'error' ? 'bg-red-500' : 'bg-yellow-500'}`}
-          style={{ top: `${(error.line - 1) * 24 + 16}px` }}
-          title={error.message}
-        />
-      ))}
+      {/* Error indicators on the right side */}
+      {errors.length > 0 && (
+        <div className="absolute top-2 right-2 flex flex-col space-y-1">
+          {errors.map((error, index) => (
+            <div
+              key={index}
+              className={`w-3 h-3 rounded-full ${error.type === 'error' ? 'bg-red-500' : 'bg-yellow-500'}`}
+              title={`Line ${error.line}: ${error.message}`}
+            />
+          ))}
+        </div>
+      )}
     </div>
   );
 };
