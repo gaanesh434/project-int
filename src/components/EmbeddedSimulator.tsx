@@ -109,8 +109,8 @@ System.out.println("Final humidity: " + humidity + "%");
             const tempVar = latestState.variables.get('temperature');
             const humidityVar = latestState.variables.get('humidity');
             
-            if (tempVar) currentTemp = tempVar.value;
-            if (humidityVar) currentHumidity = humidityVar.value;
+            if (tempVar) currentTemp = Number(tempVar.value);
+            if (humidityVar) currentHumidity = Number(humidityVar.value);
           }
           
           // Calculate realistic pressure based on temperature and humidity
@@ -129,11 +129,11 @@ System.out.println("Final humidity: " + humidity + "%");
           const now = new Date();
           const newReading: SensorReading = {
             timestamp: now.toLocaleTimeString(),
-            temperature: currentTemp,
-            humidity: currentHumidity,
-            pressure: pressure,
-            cpuUsage: cpuUsage,
-            memoryUsage: memoryUsage,
+            temperature: Number(currentTemp),
+            humidity: Number(currentHumidity),
+            pressure: Number(pressure),
+            cpuUsage: Number(cpuUsage),
+            memoryUsage: Number(memoryUsage),
           };
 
           setSensorData(prev => [...prev.slice(-19), newReading]);
@@ -209,7 +209,7 @@ System.out.println("Final humidity: " + humidity + "%");
             }`} />
             <div>
               <div className="text-2xl font-bold text-white">
-                {currentReading ? `${currentReading.temperature.toFixed(1)}°C` : '--'}
+                {currentReading ? `${Number(currentReading.temperature).toFixed(1)}°C` : '--'}
               </div>
               <div className="text-sm text-gray-400">Temperature</div>
               {currentReading && currentReading.temperature > 35 && (
@@ -227,7 +227,7 @@ System.out.println("Final humidity: " + humidity + "%");
             }`} />
             <div>
               <div className="text-2xl font-bold text-white">
-                {currentReading ? `${currentReading.humidity.toFixed(1)}%` : '--'}
+                {currentReading ? `${Number(currentReading.humidity).toFixed(1)}%` : '--'}
               </div>
               <div className="text-sm text-gray-400">Humidity</div>
               {currentReading && (currentReading.humidity < 30 || currentReading.humidity > 80) && (
@@ -242,7 +242,7 @@ System.out.println("Final humidity: " + humidity + "%");
             <Activity className="w-8 h-8 text-green-400" />
             <div>
               <div className="text-2xl font-bold text-white">
-                {currentReading ? `${currentReading.pressure.toFixed(0)} hPa` : '--'}
+                {currentReading ? `${Number(currentReading.pressure).toFixed(0)} hPa` : '--'}
               </div>
               <div className="text-sm text-gray-400">Pressure</div>
               <div className="text-xs text-green-400">Calculated</div>
@@ -258,7 +258,7 @@ System.out.println("Final humidity: " + humidity + "%");
             <Cpu className="w-6 h-6 text-purple-400" />
             <div>
               <div className="text-lg font-bold text-white">
-                {currentReading ? `${currentReading.cpuUsage.toFixed(1)}%` : '0%'}
+                {currentReading ? `${Number(currentReading.cpuUsage).toFixed(1)}%` : '0%'}
               </div>
               <div className="text-sm text-gray-400">CPU Usage</div>
               <div className="text-xs text-purple-400">Real load</div>
@@ -271,7 +271,7 @@ System.out.println("Final humidity: " + humidity + "%");
             <Battery className="w-6 h-6 text-green-400" />
             <div>
               <div className="text-lg font-bold text-white">
-                {currentReading ? `${currentReading.memoryUsage.toFixed(1)}%` : '0%'}
+                {currentReading ? `${Number(currentReading.memoryUsage).toFixed(1)}%` : '0%'}
               </div>
               <div className="text-sm text-gray-400">Memory</div>
               <div className="text-xs text-green-400">Heap usage</div>
@@ -285,7 +285,7 @@ System.out.println("Final humidity: " + humidity + "%");
             <div>
               <div className="text-lg font-bold text-white">
                 {interpreter.getGCMetrics().length > 0 ? 
-                  `${interpreter.getGCMetrics()[interpreter.getGCMetrics().length - 1].pauseTime.toFixed(1)}ms` : 
+                  `${Number(interpreter.getGCMetrics()[interpreter.getGCMetrics().length - 1].pauseTime).toFixed(1)}ms` : 
                   '0.0ms'
                 }
               </div>
