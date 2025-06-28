@@ -98,6 +98,11 @@ export class EnhancedJavaInterpreter {
       type: 'function'
     });
 
+    this.globals.set('Math.floor', {
+      value: (arg: number) => ({ value: Math.floor(arg), type: 'int' }),
+      type: 'function'
+    });
+
     this.globals.set('Math.divide', {
       value: (a: number, b: number) => {
         const verification = this.safetyVerifier.verifyOperation('DIVISION', [a, b], this.currentLine);
@@ -440,12 +445,118 @@ export class EnhancedJavaInterpreter {
     }
   }
 
-  // Implement remaining methods from original interpreter...
-  private isVariableDeclaration(line: string): boolean {
-    const trimmed = line.trim();
-    return /^(int|double|String|boolean)\s+\w+/.test(trimmed);
+  // FIXED: Proper expression evaluation that actually substitutes variables
+  private evaluateExpression(expr: string): any {
+    try {
+      // First, replace all variables with their actual values
+      let evaluatedExpr = expr.trim();
+      
+      // Replace variables with their values
+      for (const [varName, varValue] of this.environment) {
+        const regex = new RegExp(`\\b${varName}\\b`, 'g');
+        evaluatedExpr = evaluatedExpr.replace(regex, String(varValue.value));
+      }
+
+      // Handle Math.random() calls
+      evaluatedExpr = evaluatedExpr.replace(/Math\.random\(\)/g, () => String(Math.random()));
+      
+      // Handle Math.floor() calls
+      evaluatedExpr = evaluatedExpr.replace(/Math\.floor\(([^)]+)\)/g, (match, arg) => {
+        const argValue = this.evaluateExpression(arg);
+        return String(Math.floor(Number(argValue)));
+      });
+
+      // Now evaluate the expression
+      if (evaluatedExpr.includes('+') || evaluatedExpr.includes('-') || 
+          evaluatedExpr.includes('*') || evaluatedExpr.includes('/')) {
+        // Use Function constructor for safe evaluation
+        return Function(`"use strict"; return (${evaluatedExpr})`)();
+      }
+      
+      // If it's just a number, return it
+      if (!isNaN(Number(evaluatedExpr))) {
+        return Number(evaluatedExpr);
+      }
+      
+      // Otherwise return as string
+      return evaluatedExpr;
+    } catch (error) {
+      console.warn('Expression evaluation failed:', expr, error);
+      return expr; // Return original if evaluation fails
+    }
   }
 
+  // FIXED: Proper string expression evaluation
+  private evaluateStringExpression(expr: string): string {
+    let result = '';
+    
+    // Split by + but handle quoted strings properly
+    const parts = this.splitStringExpression(expr);
+    
+    for (const part of parts) {
+      const trimmedPart = part.trim();
+      
+      if (trimmedPart.startsWith('"') && trimmedPart.endsWith('"')) {
+        // String literal
+        result += trimmedPart.slice(1, -1);
+      } else if (trimmedPart.includes('(') && trimmedPart.includes(')')) {
+        // Function call or expression
+        const evaluated = this.evaluateExpression(trimmedPart);
+        result += String(evaluated);
+      } else {
+        // Variable or number
+        const value = this.environment.get(trimmedPart);
+        if (value) {
+          result += this.valueToString(value.value);
+        } else if (!isNaN(Number(trimmedPart))) {
+          result += trimmedPart;
+        } else {
+          // Try to evaluate as expression
+          const evaluated = this.evaluateExpression(trimmedPart);
+          result += String(evaluated);
+        }
+      }
+    }
+    
+    return result;
+  }
+
+  private splitStringExpression(expr: string): string[] {
+    const parts: string[] = [];
+    let current = '';
+    let inQuotes = false;
+    let parenDepth = 0;
+    
+    for (let i = 0; i < expr.length; i++) {
+      const char = expr[i];
+      
+      if (char === '"' && (i === 0 || expr[i-1] !== '\\')) {
+        inQuotes = !inQuotes;
+        current += char;
+      } else if (char === '(' && !inQuotes) {
+        parenDepth++;
+        current += char;
+      } else if (char === ')' && !inQuotes) {
+        parenDepth--;
+        current += char;
+      } else if (char === '+' && !inQuotes && parenDepth === 0) {
+        if (current.trim()) {
+          parts.push(current.trim());
+          current = '';
+        }
+      } else {
+        current += char;
+      }
+    }
+    
+    if (current.trim()) {
+      parts.push(current.trim());
+    }
+    
+    return parts;
+  }
+
+  // FIXED: Proper print statement handling with variable substitution
   private handlePrintStatement(line: string): void {
     const match = line.match(/System\.out\.println\s*\(\s*(.+?)\s*\)/);
     if (match) {
@@ -453,18 +564,28 @@ export class EnhancedJavaInterpreter {
       let output = '';
       
       if (content.startsWith('"') && content.endsWith('"')) {
+        // Simple string literal
         output = content.slice(1, -1);
       } else if (content.includes('+')) {
+        // String concatenation - evaluate properly
         output = this.evaluateStringExpression(content);
       } else {
+        // Single variable or expression
         const value = this.environment.get(content.trim());
-        output = value ? this.valueToString(value.value) : content;
+        if (value) {
+          output = this.valueToString(value.value);
+        } else {
+          // Try to evaluate as expression
+          const evaluated = this.evaluateExpression(content);
+          output = String(evaluated);
+        }
       }
       
       this.output += output + '\n';
     }
   }
 
+  // FIXED: Proper assignment with expression evaluation
   private handleAssignment(line: string): void {
     const parts = line.split('=');
     if (parts.length >= 2) {
@@ -481,10 +602,8 @@ export class EnhancedJavaInterpreter {
         javaValue = { value: value.slice(1, -1), type: 'String' };
       } else if (value === 'true' || value === 'false') {
         javaValue = { value: value === 'true', type: 'boolean' };
-      } else if (!isNaN(Number(value))) {
-        const num = Number(value);
-        javaValue = { value: num, type: Number.isInteger(num) ? 'int' : 'double' };
       } else {
+        // Evaluate the expression properly
         const result = this.evaluateExpression(value);
         
         // Ensure numeric types are actually numbers
@@ -501,6 +620,7 @@ export class EnhancedJavaInterpreter {
     }
   }
 
+  // FIXED: Proper variable declaration with expression evaluation
   private handleVariableDeclaration(line: string): void {
     const match = line.match(/(int|double|String|boolean)\s+(\w+)(?:\s*=\s*(.+?))?;?$/);
     if (match) {
@@ -512,10 +632,10 @@ export class EnhancedJavaInterpreter {
       if (initialValue) {
         if (initialValue.startsWith('"') && initialValue.endsWith('"')) {
           javaValue = { value: initialValue.slice(1, -1), type: 'String' };
-        } else if (!isNaN(Number(initialValue))) {
-          const num = Number(initialValue);
-          javaValue = { value: num, type: type };
+        } else if (initialValue === 'true' || initialValue === 'false') {
+          javaValue = { value: initialValue === 'true', type: 'boolean' };
         } else {
+          // Evaluate the expression properly
           const result = this.evaluateExpression(initialValue);
           
           // Ensure numeric types are actually numbers
@@ -579,6 +699,7 @@ export class EnhancedJavaInterpreter {
     try {
       condition = condition.trim();
       
+      // Replace variables with their actual values
       for (const [varName, varValue] of this.environment) {
         const regex = new RegExp(`\\b${varName}\\b`, 'g');
         condition = condition.replace(regex, String(varValue.value));
@@ -598,41 +719,10 @@ export class EnhancedJavaInterpreter {
     }
   }
 
-  private evaluateExpression(expr: string): any {
-    for (const [varName, varValue] of this.environment) {
-      const regex = new RegExp(`\\b${varName}\\b`, 'g');
-      expr = expr.replace(regex, String(varValue.value));
-    }
-
-    expr = expr.replace(/Math\.random\(\)/g, String(Math.random()));
-    
-    try {
-      return eval(expr);
-    } catch (error) {
-      return expr;
-    }
-  }
-
-  private evaluateStringExpression(expr: string): string {
-    let result = '';
-    const parts = expr.split('+').map(p => p.trim());
-    
-    for (const part of parts) {
-      if (part.startsWith('"') && part.endsWith('"')) {
-        result += part.slice(1, -1);
-      } else {
-        const value = this.environment.get(part);
-        if (value) {
-          result += this.valueToString(value.value);
-        } else if (!isNaN(Number(part))) {
-          result += part;
-        } else {
-          result += part;
-        }
-      }
-    }
-    
-    return result;
+  // Implement remaining methods from original interpreter...
+  private isVariableDeclaration(line: string): boolean {
+    const trimmed = line.trim();
+    return /^(int|double|String|boolean)\s+\w+/.test(trimmed);
   }
 
   private getDefaultValue(type: string): JavaValue {
