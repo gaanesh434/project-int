@@ -26,12 +26,9 @@ String[] data = new String[100];
 int counter = 0;
 
 for (int i = 0; i < 50; i++) {
-    // Allocate strings
     String temp = "Memory test " + i + " with data " + (i * 2);
-    data[i % 100] = temp;
     counter = counter + 1;
     
-    // Create some temporary objects
     int[] numbers = new int[10];
     for (int j = 0; j < 10; j++) {
         numbers[j] = i + j;
@@ -51,11 +48,9 @@ System.out.println("Total iterations: " + counter);
     
     if (isMonitoring) {
       interval = setInterval(() => {
-        // Run the test code to generate real GC activity
         try {
           interpreter.interpret(testCode);
           
-          // Get real metrics from interpreter
           const metrics = interpreter.getGCMetrics();
           const heapStatus = interpreter.getHeapStatus();
           
@@ -109,7 +104,6 @@ System.out.println("Total iterations: " + counter);
   const handleToggleMonitoring = () => {
     setIsMonitoring(!isMonitoring);
     if (!isMonitoring) {
-      // Reset data when starting monitoring
       setGcData([]);
       setTotalCollections(0);
       setCurrentHeapUsage(0);
@@ -218,16 +212,16 @@ System.out.println("Total iterations: " + counter);
         </div>
       </div>
 
-      {/* Live Charts */}
+      {/* Separate Charts to Fix Overlay Issue */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-        {/* GC Pause Times */}
+        {/* GC Pause Times - Separate Chart */}
         <div className="bg-gray-800 rounded-xl p-6 border border-gray-700">
           <h3 className="text-lg font-semibold text-white mb-4">GC Pause Times (Real Data)</h3>
           <ResponsiveContainer width="100%" height={300}>
             <LineChart data={gcData}>
               <CartesianGrid strokeDasharray="3 3" stroke="#374151" />
               <XAxis dataKey="time" stroke="#9CA3AF" />
-              <YAxis stroke="#9CA3AF" />
+              <YAxis stroke="#9CA3AF" label={{ value: 'Pause Time (ms)', angle: -90, position: 'insideLeft' }} />
               <Tooltip 
                 contentStyle={{ 
                   backgroundColor: '#1F2937', 
@@ -250,14 +244,14 @@ System.out.println("Total iterations: " + counter);
           </div>
         </div>
 
-        {/* Heap Usage */}
+        {/* Heap Usage - Separate Chart */}
         <div className="bg-gray-800 rounded-xl p-6 border border-gray-700">
           <h3 className="text-lg font-semibold text-white mb-4">Heap Usage Over Time</h3>
           <ResponsiveContainer width="100%" height={300}>
             <BarChart data={gcData}>
               <CartesianGrid strokeDasharray="3 3" stroke="#374151" />
               <XAxis dataKey="time" stroke="#9CA3AF" />
-              <YAxis stroke="#9CA3AF" />
+              <YAxis stroke="#9CA3AF" label={{ value: 'Heap Usage (%)', angle: -90, position: 'insideLeft' }} />
               <Tooltip 
                 contentStyle={{ 
                   backgroundColor: '#1F2937', 

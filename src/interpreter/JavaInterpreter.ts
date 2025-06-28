@@ -76,12 +76,6 @@ export class JavaInterpreter {
       value: (a: number, b: number) => ({ value: Math.min(a, b), type: 'double' }),
       type: 'function'
     });
-
-    // String methods
-    this.globals.set('String.valueOf', {
-      value: (arg: any) => ({ value: String(arg), type: 'String' }),
-      type: 'function'
-    });
   }
 
   interpret(source: string): { output: string; states: ExecutionState[]; gcMetrics: GCMetrics[]; violations: string[] } {
@@ -99,28 +93,8 @@ export class JavaInterpreter {
       this.allocatedObjects = 0;
       this.freedObjects = 0;
 
-      // Handle simple expressions and statements without full class structure
-      if (!source.includes('class ') && !source.includes('public class')) {
-        return this.interpretSimpleCode(source);
-      }
-
-      const parser = new JavaParser(source);
-      const program = parser.parse();
-      
-      // Register classes
-      for (const classDecl of program.classes) {
-        this.classes.set(classDecl.name, classDecl);
-      }
-
-      // Execute the program
-      this.executeProgram(program);
-      
-      return {
-        output: this.output,
-        states: this.executionStates,
-        gcMetrics: this.gcMetrics,
-        violations: this.deadlineViolations
-      };
+      // Parse and execute the code
+      return this.interpretSimpleCode(source);
     } catch (error) {
       const errorMsg = `Error: ${error instanceof Error ? error.message : String(error)}`;
       this.output += errorMsg + '\n';
@@ -134,19 +108,29 @@ export class JavaInterpreter {
   }
 
   private interpretSimpleCode(source: string): { output: string; states: ExecutionState[]; gcMetrics: GCMetrics[]; violations: string[] } {
-    // Handle simple statements like variable declarations, expressions, etc.
-    const lines = source.split('\n').filter(line => line.trim());
+    // Clean and split the source into lines
+    const lines = source.split('\n')
+      .map(line => line.trim())
+      .filter(line => line && !line.startsWith('//'));
     
     for (let i = 0; i < lines.length; i++) {
-      const line = lines[i].trim();
+      const line = lines[i];
       this.currentLine = i + 1;
       
       try {
+        // Skip empty lines and comments
+        if (!line || line.startsWith('//')) continue;
+
+        // Handle different types of statements
         if (line.includes('System.out.println')) {
           this.handlePrintStatement(line);
-        } else if (line.includes('=') && !line.includes('==')) {
+        } else if (line.includes('for') && line.includes('(')) {
+          i = this.handleForLoop(lines, i);
+        } else if (line.includes('if') && line.includes('(')) {
+          i = this.handleIfStatement(lines, i);
+        } else if (line.includes('=') && !line.includes('==') && !line.includes('!=') && !line.includes('<=') && !line.includes('>=')) {
           this.handleAssignment(line);
-        } else if (line.includes('int ') || line.includes('double ') || line.includes('String ')) {
+        } else if (this.isVariableDeclaration(line)) {
           this.handleVariableDeclaration(line);
         }
         
@@ -163,6 +147,213 @@ export class JavaInterpreter {
       gcMetrics: this.gcMetrics,
       violations: this.deadlineViolations
     };
+  }
+
+  private isVariableDeclaration(line: string): boolean {
+    const trimmed = line.trim();
+    return /^(int|double|String|boolean)\s+\w+/.test(trimmed);
+  }
+
+  private handleForLoop(lines: string[], startIndex: number): number {
+    const forLine = lines[startIndex];
+    
+    // Parse for loop: for (int i = 0; i < 5; i++)
+    const forMatch = forLine.match(/for\s*\(\s*(.*?)\s*;\s*(.*?)\s*;\s*(.*?)\s*\)/);
+    if (!forMatch) return startIndex;
+
+    const [, init, condition, increment] = forMatch;
+    
+    // Execute initialization
+    if (init.trim()) {
+      this.handleVariableDeclaration(init + ';');
+    }
+
+    // Find the loop body
+    let bodyStart = startIndex + 1;
+    let bodyEnd = bodyStart;
+    let braceCount = 0;
+    let hasOpenBrace = false;
+
+    // Check if next line starts with {
+    if (lines[bodyStart] && lines[bodyStart].trim() === '{') {
+      hasOpenBrace = true;
+      bodyStart++;
+      braceCount = 1;
+      
+      for (let i = bodyStart; i < lines.length && braceCount > 0; i++) {
+        const line = lines[i].trim();
+        if (line.includes('{')) braceCount++;
+        if (line.includes('}')) braceCount--;
+        if (braceCount === 0) {
+          bodyEnd = i;
+          break;
+        }
+      }
+    } else {
+      // Single statement
+      bodyEnd = bodyStart;
+    }
+
+    // Execute loop
+    let iterations = 0;
+    const maxIterations = 1000; // Prevent infinite loops
+
+    while (iterations < maxIterations) {
+      // Check condition
+      if (!this.evaluateCondition(condition)) break;
+
+      // Execute body
+      for (let i = bodyStart; i <= bodyEnd; i++) {
+        if (i < lines.length && lines[i].trim()) {
+          const bodyLine = lines[i].trim();
+          if (bodyLine !== '{' && bodyLine !== '}') {
+            this.currentLine = i + 1;
+            
+            if (bodyLine.includes('System.out.println')) {
+              this.handlePrintStatement(bodyLine);
+            } else if (bodyLine.includes('=') && !bodyLine.includes('==')) {
+              this.handleAssignment(bodyLine);
+            } else if (this.isVariableDeclaration(bodyLine)) {
+              this.handleVariableDeclaration(bodyLine);
+            }
+            
+            this.recordExecutionState();
+          }
+        }
+      }
+
+      // Execute increment
+      if (increment.trim()) {
+        this.handleIncrement(increment);
+      }
+
+      iterations++;
+    }
+
+    return hasOpenBrace ? bodyEnd : bodyEnd;
+  }
+
+  private handleIfStatement(lines: string[], startIndex: number): number {
+    const ifLine = lines[startIndex];
+    
+    // Parse if condition
+    const ifMatch = ifLine.match(/if\s*\(\s*(.*?)\s*\)/);
+    if (!ifMatch) return startIndex;
+
+    const condition = ifMatch[1];
+    const conditionResult = this.evaluateCondition(condition);
+
+    // Find the if body
+    let bodyStart = startIndex + 1;
+    let bodyEnd = bodyStart;
+    let braceCount = 0;
+    let hasOpenBrace = false;
+
+    if (lines[bodyStart] && lines[bodyStart].trim() === '{') {
+      hasOpenBrace = true;
+      bodyStart++;
+      braceCount = 1;
+      
+      for (let i = bodyStart; i < lines.length && braceCount > 0; i++) {
+        const line = lines[i].trim();
+        if (line.includes('{')) braceCount++;
+        if (line.includes('}')) braceCount--;
+        if (braceCount === 0) {
+          bodyEnd = i;
+          break;
+        }
+      }
+    } else {
+      bodyEnd = bodyStart;
+    }
+
+    // Execute if body if condition is true
+    if (conditionResult) {
+      for (let i = bodyStart; i <= bodyEnd; i++) {
+        if (i < lines.length && lines[i].trim()) {
+          const bodyLine = lines[i].trim();
+          if (bodyLine !== '{' && bodyLine !== '}') {
+            this.currentLine = i + 1;
+            
+            if (bodyLine.includes('System.out.println')) {
+              this.handlePrintStatement(bodyLine);
+            } else if (bodyLine.includes('=') && !bodyLine.includes('==')) {
+              this.handleAssignment(bodyLine);
+            } else if (this.isVariableDeclaration(bodyLine)) {
+              this.handleVariableDeclaration(bodyLine);
+            }
+            
+            this.recordExecutionState();
+          }
+        }
+      }
+    }
+
+    return hasOpenBrace ? bodyEnd : bodyEnd;
+  }
+
+  private evaluateCondition(condition: string): boolean {
+    try {
+      // Handle simple conditions like "i < 5", "temperature > 30", etc.
+      condition = condition.trim();
+      
+      // Replace variables with their values
+      for (const [varName, varValue] of this.environment) {
+        const regex = new RegExp(`\\b${varName}\\b`, 'g');
+        condition = condition.replace(regex, String(varValue.value));
+      }
+
+      // Evaluate the condition
+      if (condition.includes('<')) {
+        const [left, right] = condition.split('<').map(s => s.trim());
+        return Number(left) < Number(right);
+      } else if (condition.includes('>')) {
+        const [left, right] = condition.split('>').map(s => s.trim());
+        return Number(left) > Number(right);
+      } else if (condition.includes('<=')) {
+        const [left, right] = condition.split('<=').map(s => s.trim());
+        return Number(left) <= Number(right);
+      } else if (condition.includes('>=')) {
+        const [left, right] = condition.split('>=').map(s => s.trim());
+        return Number(left) >= Number(right);
+      } else if (condition.includes('==')) {
+        const [left, right] = condition.split('==').map(s => s.trim());
+        return left === right;
+      } else if (condition.includes('!=')) {
+        const [left, right] = condition.split('!=').map(s => s.trim());
+        return left !== right;
+      }
+      
+      return Boolean(condition);
+    } catch (error) {
+      return false;
+    }
+  }
+
+  private handleIncrement(increment: string): void {
+    increment = increment.trim();
+    
+    if (increment.includes('++')) {
+      const varName = increment.replace('++', '').trim();
+      const currentValue = this.environment.get(varName);
+      if (currentValue && typeof currentValue.value === 'number') {
+        this.environment.set(varName, {
+          value: currentValue.value + 1,
+          type: currentValue.type
+        });
+      }
+    } else if (increment.includes('--')) {
+      const varName = increment.replace('--', '').trim();
+      const currentValue = this.environment.get(varName);
+      if (currentValue && typeof currentValue.value === 'number') {
+        this.environment.set(varName, {
+          value: currentValue.value - 1,
+          type: currentValue.type
+        });
+      }
+    } else if (increment.includes('=')) {
+      this.handleAssignment(increment);
+    }
   }
 
   private handlePrintStatement(line: string) {
@@ -189,22 +380,31 @@ export class JavaInterpreter {
 
   private handleAssignment(line: string) {
     const parts = line.split('=');
-    if (parts.length === 2) {
+    if (parts.length >= 2) {
       const varName = parts[0].trim();
-      const value = parts[1].trim().replace(';', '');
+      const value = parts.slice(1).join('=').trim().replace(';', '');
       
       let javaValue: JavaValue;
+      
       if (value.startsWith('"') && value.endsWith('"')) {
         javaValue = { value: value.slice(1, -1), type: 'String' };
+      } else if (value === 'true' || value === 'false') {
+        javaValue = { value: value === 'true', type: 'boolean' };
+      } else if (value.includes('+') || value.includes('-') || value.includes('*') || value.includes('/')) {
+        // Expression evaluation
+        const result = this.evaluateExpression(value);
+        javaValue = { value: result, type: typeof result === 'number' ? 'int' : 'String' };
       } else if (!isNaN(Number(value))) {
         const num = Number(value);
         javaValue = { value: num, type: Number.isInteger(num) ? 'int' : 'double' };
-      } else if (value === 'true' || value === 'false') {
-        javaValue = { value: value === 'true', type: 'boolean' };
       } else {
-        // Expression or variable reference
-        const existingVar = this.environment.get(value);
-        javaValue = existingVar || { value: value, type: 'String' };
+        // Variable reference or function call
+        if (value.includes('Math.random()')) {
+          javaValue = { value: Math.random(), type: 'double' };
+        } else {
+          const existingVar = this.environment.get(value);
+          javaValue = existingVar || { value: value, type: 'String' };
+        }
       }
       
       this.environment.set(varName, javaValue);
@@ -223,11 +423,16 @@ export class JavaInterpreter {
       if (initialValue) {
         if (initialValue.startsWith('"') && initialValue.endsWith('"')) {
           javaValue = { value: initialValue.slice(1, -1), type: 'String' };
+        } else if (initialValue === 'true' || initialValue === 'false') {
+          javaValue = { value: initialValue === 'true', type: 'boolean' };
+        } else if (initialValue.includes('Math.random()')) {
+          javaValue = { value: Math.random(), type: 'double' };
         } else if (!isNaN(Number(initialValue))) {
           const num = Number(initialValue);
           javaValue = { value: num, type: type };
-        } else if (initialValue === 'true' || initialValue === 'false') {
-          javaValue = { value: initialValue === 'true', type: 'boolean' };
+        } else if (initialValue.includes('+') || initialValue.includes('-')) {
+          const result = this.evaluateExpression(initialValue);
+          javaValue = { value: result, type: type };
         } else {
           javaValue = this.getDefaultValue(type);
         }
@@ -240,332 +445,63 @@ export class JavaInterpreter {
     }
   }
 
+  private evaluateExpression(expr: string): any {
+    // Replace variables with their values
+    for (const [varName, varValue] of this.environment) {
+      const regex = new RegExp(`\\b${varName}\\b`, 'g');
+      expr = expr.replace(regex, String(varValue.value));
+    }
+
+    // Handle Math.random()
+    expr = expr.replace(/Math\.random\(\)/g, String(Math.random()));
+    
+    // Handle string concatenation
+    if (expr.includes('+') && (expr.includes('"') || this.hasStringVariable(expr))) {
+      return this.evaluateStringExpression(expr);
+    }
+
+    // Handle arithmetic
+    try {
+      return eval(expr);
+    } catch (error) {
+      return expr;
+    }
+  }
+
+  private hasStringVariable(expr: string): boolean {
+    for (const [varName, varValue] of this.environment) {
+      if (expr.includes(varName) && varValue.type === 'String') {
+        return true;
+      }
+    }
+    return false;
+  }
+
   private evaluateStringExpression(expr: string): string {
-    // Simple string concatenation evaluation
-    const parts = expr.split('+').map(p => p.trim());
+    // Handle string concatenation with variables
     let result = '';
+    const parts = expr.split('+').map(p => p.trim());
     
     for (const part of parts) {
       if (part.startsWith('"') && part.endsWith('"')) {
         result += part.slice(1, -1);
+      } else if (part.includes('(') && part.includes(')')) {
+        // Function call or expression in parentheses
+        const evaluated = this.evaluateExpression(part);
+        result += String(evaluated);
       } else {
         const value = this.environment.get(part);
-        result += value ? this.valueToString(value.value) : part;
+        if (value) {
+          result += this.valueToString(value.value);
+        } else if (!isNaN(Number(part))) {
+          result += part;
+        } else {
+          result += part;
+        }
       }
     }
     
     return result;
-  }
-
-  private executeProgram(program: AST.Program): void {
-    // Look for classes and execute their methods
-    for (const classDecl of program.classes) {
-      this.executeClass(classDecl);
-    }
-  }
-
-  private executeClass(classDecl: AST.ClassDeclaration): void {
-    // Initialize class fields
-    for (const field of classDecl.fields) {
-      if (field.initializer) {
-        const value = this.evaluateExpression(field.initializer);
-        this.environment.set(field.name, value);
-      } else {
-        this.environment.set(field.name, this.getDefaultValue(field.dataType));
-      }
-      this.allocateMemory(this.environment.get(field.name)!);
-    }
-
-    // Execute methods that should run automatically
-    for (const method of classDecl.methods) {
-      if (method.name === 'processData' || method.name === 'main' || method.name === 'run') {
-        this.executeMethod(classDecl, method);
-      }
-    }
-  }
-
-  private executeMethod(classDecl: AST.ClassDeclaration, method: AST.MethodDeclaration): void {
-    this.callStack.push(`${classDecl.name}.${method.name}`);
-    
-    // Check for @Deadline annotation
-    const deadlineAnnotation = method.annotations.find(a => a.name === 'Deadline');
-    const deadline = deadlineAnnotation?.parameters.ms || Infinity;
-    const startTime = performance.now();
-    
-    try {
-      // Execute method body
-      for (const statement of method.body) {
-        this.currentLine = statement.line;
-        this.recordExecutionState();
-        
-        const result = this.executeStatement(statement);
-        if (result && result.type === 'return') {
-          break;
-        }
-        
-        this.maybePerformGC();
-      }
-      
-      const executionTime = performance.now() - startTime;
-      
-      // Check deadline violation
-      if (executionTime > deadline) {
-        this.deadlineViolations.push(
-          `Method ${classDecl.name}.${method.name} exceeded deadline: ${executionTime.toFixed(2)}ms > ${deadline}ms`
-        );
-      }
-      
-    } finally {
-      this.callStack.pop();
-    }
-  }
-
-  private executeStatement(statement: AST.Statement): JavaValue | null {
-    switch (statement.type) {
-      case 'ExpressionStatement':
-        return this.evaluateExpression((statement as AST.ExpressionStatement).expression);
-        
-      case 'VariableDeclaration':
-        const varDecl = statement as AST.VariableDeclaration;
-        const value = varDecl.initializer 
-          ? this.evaluateExpression(varDecl.initializer)
-          : this.getDefaultValue(varDecl.dataType);
-        this.environment.set(varDecl.name, value);
-        this.allocateMemory(value);
-        return null;
-        
-      case 'IfStatement':
-        const ifStmt = statement as AST.IfStatement;
-        const condition = this.evaluateExpression(ifStmt.condition);
-        if (this.isTruthy(condition.value)) {
-          return this.executeStatement(ifStmt.thenStatement);
-        } else if (ifStmt.elseStatement) {
-          return this.executeStatement(ifStmt.elseStatement);
-        }
-        return null;
-        
-      case 'WhileStatement':
-        const whileStmt = statement as AST.WhileStatement;
-        let iterations = 0;
-        while (iterations < 1000) { // Prevent infinite loops
-          const cond = this.evaluateExpression(whileStmt.condition);
-          if (!this.isTruthy(cond.value)) break;
-          
-          const result = this.executeStatement(whileStmt.body);
-          if (result && result.type === 'return') return result;
-          iterations++;
-        }
-        return null;
-        
-      case 'ForStatement':
-        const forStmt = statement as AST.ForStatement;
-        if (forStmt.init) {
-          this.executeStatement(forStmt.init);
-        }
-        
-        let forIterations = 0;
-        while (forIterations < 1000) { // Prevent infinite loops
-          if (forStmt.condition) {
-            const cond = this.evaluateExpression(forStmt.condition);
-            if (!this.isTruthy(cond.value)) break;
-          }
-          
-          const result = this.executeStatement(forStmt.body);
-          if (result && result.type === 'return') return result;
-          
-          if (forStmt.update) {
-            this.evaluateExpression(forStmt.update);
-          }
-          forIterations++;
-        }
-        return null;
-        
-      case 'BlockStatement':
-        const blockStmt = statement as AST.BlockStatement;
-        for (const stmt of blockStmt.statements) {
-          const result = this.executeStatement(stmt);
-          if (result && result.type === 'return') return result;
-        }
-        return null;
-        
-      case 'ReturnStatement':
-        const returnStmt = statement as AST.ReturnStatement;
-        const returnValue = returnStmt.value 
-          ? this.evaluateExpression(returnStmt.value)
-          : { value: null, type: 'void' };
-        return { ...returnValue, type: 'return' };
-        
-      default:
-        return null;
-    }
-  }
-
-  private evaluateExpression(expression: AST.Expression): JavaValue {
-    switch (expression.type) {
-      case 'Literal':
-        const literal = expression as AST.Literal;
-        return { value: literal.value, type: literal.dataType };
-        
-      case 'Identifier':
-        const identifier = expression as AST.Identifier;
-        const value = this.environment.get(identifier.name) || this.globals.get(identifier.name);
-        if (!value) {
-          throw new Error(`Undefined variable: ${identifier.name}`);
-        }
-        return value;
-        
-      case 'BinaryExpression':
-        const binary = expression as AST.BinaryExpression;
-        const left = this.evaluateExpression(binary.left);
-        const right = this.evaluateExpression(binary.right);
-        return this.evaluateBinaryOperation(left, binary.operator, right);
-        
-      case 'UnaryExpression':
-        const unary = expression as AST.UnaryExpression;
-        const operand = this.evaluateExpression(unary.operand);
-        return this.evaluateUnaryOperation(unary.operator, operand);
-        
-      case 'AssignmentExpression':
-        const assignment = expression as AST.AssignmentExpression;
-        const assignValue = this.evaluateExpression(assignment.right);
-        if (assignment.left.type === 'Identifier') {
-          const id = assignment.left as AST.Identifier;
-          this.environment.set(id.name, assignValue);
-        }
-        return assignValue;
-        
-      case 'CallExpression':
-        const call = expression as AST.CallExpression;
-        return this.evaluateCall(call);
-        
-      case 'MemberExpression':
-        const member = expression as AST.MemberExpression;
-        return this.evaluateMemberAccess(member);
-        
-      default:
-        throw new Error(`Unknown expression type: ${expression.type}`);
-    }
-  }
-
-  private evaluateBinaryOperation(left: JavaValue, operator: string, right: JavaValue): JavaValue {
-    switch (operator) {
-      case '+':
-        if (left.type === 'String' || right.type === 'String') {
-          return { value: String(left.value) + String(right.value), type: 'String' };
-        }
-        return { value: Number(left.value) + Number(right.value), type: 'double' };
-      case '-':
-        return { value: Number(left.value) - Number(right.value), type: 'double' };
-      case '*':
-        return { value: Number(left.value) * Number(right.value), type: 'double' };
-      case '/':
-        return { value: Number(left.value) / Number(right.value), type: 'double' };
-      case '%':
-        return { value: Number(left.value) % Number(right.value), type: 'double' };
-      case '==':
-        return { value: left.value === right.value, type: 'boolean' };
-      case '!=':
-        return { value: left.value !== right.value, type: 'boolean' };
-      case '<':
-        return { value: Number(left.value) < Number(right.value), type: 'boolean' };
-      case '>':
-        return { value: Number(left.value) > Number(right.value), type: 'boolean' };
-      case '<=':
-        return { value: Number(left.value) <= Number(right.value), type: 'boolean' };
-      case '>=':
-        return { value: Number(left.value) >= Number(right.value), type: 'boolean' };
-      case '&&':
-        return { value: this.isTruthy(left.value) && this.isTruthy(right.value), type: 'boolean' };
-      case '||':
-        return { value: this.isTruthy(left.value) || this.isTruthy(right.value), type: 'boolean' };
-      default:
-        throw new Error(`Unknown binary operator: ${operator}`);
-    }
-  }
-
-  private evaluateUnaryOperation(operator: string, operand: JavaValue): JavaValue {
-    switch (operator) {
-      case '-':
-        return { value: -Number(operand.value), type: operand.type };
-      case '!':
-        return { value: !this.isTruthy(operand.value), type: 'boolean' };
-      default:
-        throw new Error(`Unknown unary operator: ${operator}`);
-    }
-  }
-
-  private evaluateCall(call: AST.CallExpression): JavaValue {
-    if (call.callee.type === 'MemberExpression') {
-      const member = call.callee as AST.MemberExpression;
-      
-      // Handle System.out.println
-      if (member.object.type === 'MemberExpression') {
-        const systemOut = member.object as AST.MemberExpression;
-        if ((systemOut.object as AST.Identifier).name === 'System' && 
-            (systemOut.property as AST.Identifier).name === 'out' &&
-            (member.property as AST.Identifier).name === 'println') {
-          
-          const args = call.arguments.map(arg => this.evaluateExpression(arg));
-          const output = args.map(arg => this.valueToString(arg.value)).join(' ');
-          this.output += output + '\n';
-          return { value: null, type: 'void' };
-        }
-      }
-      
-      // Handle Math functions
-      if (member.object.type === 'Identifier') {
-        const objName = (member.object as AST.Identifier).name;
-        const methodName = (member.property as AST.Identifier).name;
-        
-        if (objName === 'Math') {
-          const mathFunc = this.globals.get(`Math.${methodName}`);
-          if (mathFunc && mathFunc.type === 'function') {
-            const args = call.arguments.map(arg => this.evaluateExpression(arg));
-            return mathFunc.value(...args.map(arg => arg.value));
-          }
-        }
-      }
-    }
-    
-    if (call.callee.type === 'Identifier') {
-      const funcName = (call.callee as AST.Identifier).name;
-      const func = this.globals.get(funcName);
-      
-      if (func && func.type === 'function') {
-        const args = call.arguments.map(arg => this.evaluateExpression(arg));
-        return func.value(...args.map(arg => arg.value));
-      }
-    }
-    
-    return { value: null, type: 'void' };
-  }
-
-  private evaluateMemberAccess(member: AST.MemberExpression): JavaValue {
-    if (member.object.type === 'Identifier') {
-      const objName = (member.object as AST.Identifier).name;
-      const propName = (member.property as AST.Identifier).name;
-      
-      // Handle System.out
-      if (objName === 'System' && propName === 'out') {
-        return { value: 'System.out', type: 'PrintStream' };
-      }
-      
-      // Handle Math functions
-      if (objName === 'Math') {
-        const mathFunc = this.globals.get(`Math.${propName}`);
-        if (mathFunc) return mathFunc;
-      }
-    }
-    
-    const object = this.evaluateExpression(member.object);
-    const property = (member.property as AST.Identifier).name;
-    
-    // Handle object property access
-    if (typeof object.value === 'object' && object.value !== null) {
-      return { value: object.value[property], type: 'unknown' };
-    }
-    
-    return { value: null, type: 'unknown' };
   }
 
   private getDefaultValue(type: string): JavaValue {
@@ -583,14 +519,6 @@ export class JavaInterpreter {
     }
   }
 
-  private isTruthy(value: any): boolean {
-    if (value === null || value === undefined) return false;
-    if (typeof value === 'boolean') return value;
-    if (typeof value === 'number') return value !== 0;
-    if (typeof value === 'string') return value.length > 0;
-    return true;
-  }
-
   private valueToString(value: any): string {
     if (value === null || value === undefined) return 'null';
     return String(value);
@@ -601,7 +529,6 @@ export class JavaInterpreter {
     this.heapSize += size;
     this.allocatedObjects++;
     
-    // Store object in registry for GC tracking
     const objectId = `obj_${this.allocatedObjects}`;
     this.objectRegistry.set(objectId, value);
   }
@@ -617,7 +544,7 @@ export class JavaInterpreter {
       case 'String':
         return (value.value as string).length * 2;
       default:
-        return 8; // reference size
+        return 8;
     }
   }
 
@@ -632,7 +559,6 @@ export class JavaInterpreter {
     
     this.executionStates.push(state);
     
-    // Keep only last 100 states
     if (this.executionStates.length > 100) {
       this.executionStates.shift();
     }
@@ -647,11 +573,9 @@ export class JavaInterpreter {
   private performGC(): void {
     const startTime = performance.now();
     
-    // Mark and sweep simulation
     const reachableObjects = this.markReachableObjects();
     const freedObjects = this.objectRegistry.size - reachableObjects.size;
     
-    // Sweep unreachable objects
     for (const [objectId, obj] of this.objectRegistry) {
       if (!reachableObjects.has(objectId)) {
         this.heapSize -= this.getValueSize(obj);
@@ -671,7 +595,6 @@ export class JavaInterpreter {
       freedObjects: this.freedObjects
     });
     
-    // Keep only last 50 GC metrics
     if (this.gcMetrics.length > 50) {
       this.gcMetrics.shift();
     }
@@ -680,7 +603,6 @@ export class JavaInterpreter {
   private markReachableObjects(): Set<string> {
     const reachable = new Set<string>();
     
-    // Mark objects reachable from environment
     for (const [name, value] of this.environment) {
       for (const [objectId, obj] of this.objectRegistry) {
         if (obj === value) {
@@ -689,7 +611,6 @@ export class JavaInterpreter {
       }
     }
     
-    // Mark objects reachable from globals
     for (const [name, value] of this.globals) {
       for (const [objectId, obj] of this.objectRegistry) {
         if (obj === value) {
@@ -713,12 +634,10 @@ export class JavaInterpreter {
     return this.deadlineViolations;
   }
 
-  // Method to trigger GC manually for monitoring
   triggerGC(): void {
     this.performGC();
   }
 
-  // Method to get current heap status
   getHeapStatus(): { used: number; max: number; percentage: number } {
     return {
       used: this.heapSize,
