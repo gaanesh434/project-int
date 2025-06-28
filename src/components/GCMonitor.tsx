@@ -390,7 +390,7 @@ System.out.println("Final array size: " + dataArray.length);
               </li>
               <li className="flex items-center space-x-2">
                 <div className="w-2 h-2 bg-green-500 rounded-full"></div>
-                <span>Off-heap allocation for large objects (>1KB)</span>
+                <span>{'Off-heap allocation for large objects (>1KB)'}</span>
               </li>
               <li className="flex items-center space-x-2">
                 <div className="w-2 h-2 bg-green-500 rounded-full"></div>
