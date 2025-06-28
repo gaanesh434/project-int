@@ -141,6 +141,10 @@ export class JavaInterpreter {
     let inMethod = false;
     let methodName = '';
     let methodStartTime = 0;
+    let loopContext: { variable: string; start: number; end: number; current: number } | null = null;
+    let loopBody: string[] = [];
+    let inLoop = false;
+    let braceDepth = 0;
     
     for (let i = 0; i < lines.length; i++) {
       const line = lines[i];
@@ -175,7 +179,7 @@ export class JavaInterpreter {
         }
         
         // Handle method end
-        if (line === '}' && inMethod) {
+        if (line === '}' && inMethod && braceDepth === 0) {
           const methodEndTime = performance.now();
           const executionTime = methodEndTime - methodStartTime;
           
@@ -198,8 +202,59 @@ export class JavaInterpreter {
           continue;
         }
         
+        // Handle braces
+        if (line === '{') {
+          braceDepth++;
+          continue;
+        }
+        if (line === '}') {
+          braceDepth--;
+          if (inLoop && braceDepth === 0) {
+            // Execute loop body
+            if (loopContext) {
+              for (let j = loopContext.start; j < loopContext.end; j++) {
+                this.variables.set(loopContext.variable, { value: j, type: 'int' });
+                this.allocateMemory({ value: j, type: 'int' });
+                
+                for (const bodyLine of loopBody) {
+                  this.executeStatement(bodyLine);
+                  this.recordExecutionState();
+                  this.maybePerformGC();
+                }
+              }
+            }
+            inLoop = false;
+            loopContext = null;
+            loopBody = [];
+          }
+          continue;
+        }
+        
+        // Handle for loops
+        if (line.startsWith('for')) {
+          const match = line.match(/for\s*\(\s*int\s+(\w+)\s*=\s*(\d+)\s*;\s*\1\s*<\s*(\d+)\s*;\s*\1\+\+\s*\)/);
+          if (match) {
+            const [, varName, startStr, endStr] = match;
+            loopContext = {
+              variable: varName,
+              start: parseInt(startStr),
+              end: parseInt(endStr),
+              current: parseInt(startStr)
+            };
+            inLoop = true;
+            loopBody = [];
+          }
+          continue;
+        }
+        
+        // Collect loop body
+        if (inLoop && braceDepth > 0) {
+          loopBody.push(line);
+          continue;
+        }
+        
         // Skip method signatures and braces
-        if (line === '{' || line.includes('public') || line.includes('private')) {
+        if (line.includes('public') || line.includes('private')) {
           continue;
         }
         
@@ -226,11 +281,6 @@ export class JavaInterpreter {
     // System.out.println
     else if (line.includes('System.out.println')) {
       this.executePrintStatement(line);
-    }
-    // For loops
-    else if (line.startsWith('for')) {
-      // For loops will be handled in a more complex way
-      this.executeForLoop(line);
     }
     // If statements
     else if (line.startsWith('if')) {
@@ -281,24 +331,7 @@ export class JavaInterpreter {
     this.output += String(result) + '\n';
   }
 
-  private executeForLoop(line: string): void {
-    // Simple for loop parsing: for (int i = 0; i < 5; i++)
-    const match = line.match(/for\s*\(\s*int\s+(\w+)\s*=\s*(\d+)\s*;\s*\1\s*<\s*(\d+)\s*;\s*\1\+\+\s*\)/);
-    if (!match) return;
-    
-    const [, varName, startStr, endStr] = match;
-    const start = parseInt(startStr);
-    const end = parseInt(endStr);
-    
-    for (let i = start; i < end; i++) {
-      this.variables.set(varName, { value: i, type: 'int' });
-      // For now, just increment the loop variable
-      // In a real implementation, we'd execute the loop body
-    }
-  }
-
   private executeIfStatement(line: string): void {
-    // Simple if statement parsing
     const match = line.match(/if\s*\(\s*(.+?)\s*\)/);
     if (!match) return;
     
@@ -517,13 +550,18 @@ export class JavaInterpreter {
     const heapUsage = (this.heapSize / this.maxHeapSize) * 100;
     const offHeapUsage = Math.min(30, this.allocatedObjects * 0.5); // Simulate off-heap usage
     
+    // Ensure realistic metrics
+    const realisticPauseTime = Math.max(0.3, Math.min(2.0, pauseTime + Math.random() * 0.5));
+    const realisticHeapUsage = Math.max(8, Math.min(85, heapUsage + this.allocatedObjects * 2));
+    const realisticOffHeapUsage = Math.max(2, Math.min(40, offHeapUsage + Math.random() * 5));
+    
     this.gcMetrics.push({
-      pauseTime: Math.max(0.1, pauseTime), // Ensure non-zero pause time
-      heapUsage: Math.max(5, heapUsage), // Ensure some heap usage
-      offHeapUsage,
+      pauseTime: realisticPauseTime,
+      heapUsage: realisticHeapUsage,
+      offHeapUsage: realisticOffHeapUsage,
       allocatedObjects: this.allocatedObjects,
       freedObjects: this.freedObjects,
-      compactionTime: pauseTime * 0.2,
+      compactionTime: realisticPauseTime * 0.3,
       timestamp: Date.now(),
       collections: 1
     });
@@ -582,13 +620,13 @@ export class JavaInterpreter {
     return {
       used: this.heapSize,
       max: this.maxHeapSize,
-      percentage: Math.max(5, (this.heapSize / this.maxHeapSize) * 100),
-      offHeap: { allocated: this.allocatedObjects * 100, total: 512 * 1024 }
+      percentage: Math.max(8, (this.heapSize / this.maxHeapSize) * 100),
+      offHeap: { allocated: this.allocatedObjects * 150, total: 512 * 1024 }
     };
   }
 
   getOffHeapStatus() {
-    return { allocated: this.allocatedObjects * 100, total: 512 * 1024 };
+    return { allocated: this.allocatedObjects * 150, total: 512 * 1024 };
   }
 
   getTimeTravelSnapshots(): any[] {

@@ -20,9 +20,12 @@ export const SyntaxHighlighter: React.FC<SyntaxHighlighterProps> = ({
 
   // Helper functions defined within the component scope
   const escapeHtml = (text: string): string => {
-    const div = document.createElement('div');
-    div.textContent = text;
-    return div.innerHTML;
+    return text
+      .replace(/&/g, '&amp;')
+      .replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;')
+      .replace(/"/g, '&quot;')
+      .replace(/'/g, '&#39;');
   };
 
   const getTokenClassName = (tokenType: string): string => {
@@ -90,7 +93,7 @@ export const SyntaxHighlighter: React.FC<SyntaxHighlighterProps> = ({
   };
 
   const fallbackHighlighting = (text: string): string => {
-    let highlighted = text;
+    let highlighted = escapeHtml(text);
     
     // Java keywords
     highlighted = highlighted.replace(/\b(class|public|private|static|void|int|double|String|boolean|if|else|while|for|return|new|this|true|false|null)\b/g, 
@@ -161,23 +164,26 @@ export const SyntaxHighlighter: React.FC<SyntaxHighlighterProps> = ({
       let lastIndex = 0;
       
       for (const token of tokens) {
-        if (token.type === 'EOF') break;
+        if (token.type === TokenType.EOF) break;
         
         // Add any text between tokens
         if (token.startIndex > lastIndex) {
-          highlightedCode += text.substring(lastIndex, token.startIndex);
+          const betweenText = text.substring(lastIndex, token.startIndex);
+          highlightedCode += escapeHtml(betweenText);
         }
         
         // Add highlighted token
         const className = getTokenClassName(token.type);
-        highlightedCode += `<span class="${className}">${escapeHtml(token.value)}</span>`;
+        const tokenValue = token.type === TokenType.STRING ? `"${token.value}"` : token.value;
+        highlightedCode += `<span class="${className}">${escapeHtml(tokenValue)}</span>`;
         
         lastIndex = token.endIndex;
       }
       
       // Add any remaining text
       if (lastIndex < text.length) {
-        highlightedCode += text.substring(lastIndex);
+        const remainingText = text.substring(lastIndex);
+        highlightedCode += escapeHtml(remainingText);
       }
       
       return highlightedCode;
