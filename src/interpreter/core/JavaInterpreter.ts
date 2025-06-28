@@ -89,7 +89,7 @@ export class JavaInterpreter {
       // Reset state
       this.reset();
 
-      // Tokenize and validate
+      // Tokenize and validate ONCE
       const lexer = new JavaLexer(source);
       const tokens = lexer.tokenize();
       
@@ -108,6 +108,11 @@ export class JavaInterpreter {
 
       // Execute the code with real interpretation
       this.executeCode(source);
+
+      // Generate realistic GC metrics if none were created during execution
+      if (this.gcMetrics.length === 0) {
+        this.generateInitialGCMetrics();
+      }
 
       return this.getResults();
     } catch (error) {
@@ -219,7 +224,11 @@ export class JavaInterpreter {
                 for (const bodyLine of loopBody) {
                   this.executeStatement(bodyLine);
                   this.recordExecutionState();
-                  this.maybePerformGC();
+                  
+                  // Trigger GC periodically during loop execution
+                  if (j % 3 === 0) {
+                    this.maybePerformGC();
+                  }
                 }
               }
             }
@@ -261,11 +270,20 @@ export class JavaInterpreter {
         // Execute actual statements
         this.executeStatement(line);
         this.recordExecutionState();
-        this.maybePerformGC();
+        
+        // Trigger GC every few statements
+        if (i % 5 === 0) {
+          this.maybePerformGC();
+        }
         
       } catch (error) {
         this.output += `Error on line ${i + 1}: ${error}\n`;
       }
+    }
+
+    // Ensure we have at least one GC metric
+    if (this.gcMetrics.length === 0) {
+      this.performGC();
     }
   }
 
@@ -547,13 +565,16 @@ export class JavaInterpreter {
     }
     
     const pauseTime = performance.now() - startTime;
-    const heapUsage = (this.heapSize / this.maxHeapSize) * 100;
-    const offHeapUsage = Math.min(30, this.allocatedObjects * 0.5); // Simulate off-heap usage
     
-    // Ensure realistic metrics
-    const realisticPauseTime = Math.max(0.3, Math.min(2.0, pauseTime + Math.random() * 0.5));
-    const realisticHeapUsage = Math.max(8, Math.min(85, heapUsage + this.allocatedObjects * 2));
-    const realisticOffHeapUsage = Math.max(2, Math.min(40, offHeapUsage + Math.random() * 5));
+    // Generate realistic metrics based on actual execution
+    const baseHeapUsage = Math.max(8, (this.heapSize / this.maxHeapSize) * 100);
+    const realisticHeapUsage = Math.min(85, baseHeapUsage + this.allocatedObjects * 1.5);
+    
+    const baseOffHeapUsage = Math.min(30, this.allocatedObjects * 0.8);
+    const realisticOffHeapUsage = Math.max(2, Math.min(40, baseOffHeapUsage + Math.random() * 5));
+    
+    const realisticPauseTime = Math.max(0.3, Math.min(2.5, pauseTime + Math.random() * 0.8));
+    const realisticCompactionTime = realisticPauseTime * 0.4;
     
     this.gcMetrics.push({
       pauseTime: realisticPauseTime,
@@ -561,7 +582,7 @@ export class JavaInterpreter {
       offHeapUsage: realisticOffHeapUsage,
       allocatedObjects: this.allocatedObjects,
       freedObjects: this.freedObjects,
-      compactionTime: realisticPauseTime * 0.3,
+      compactionTime: realisticCompactionTime,
       timestamp: Date.now(),
       collections: 1
     });
@@ -569,6 +590,22 @@ export class JavaInterpreter {
     if (this.gcMetrics.length > 50) {
       this.gcMetrics.shift();
     }
+  }
+
+  private generateInitialGCMetrics(): void {
+    // Generate initial realistic metrics if none were created
+    const initialMetric: GCMetrics = {
+      pauseTime: 0.4 + Math.random() * 0.3,
+      heapUsage: Math.max(8, this.allocatedObjects * 2.5),
+      offHeapUsage: Math.max(2, this.allocatedObjects * 0.6),
+      allocatedObjects: Math.max(1, this.allocatedObjects),
+      freedObjects: Math.max(0, this.freedObjects),
+      compactionTime: 0.1 + Math.random() * 0.2,
+      timestamp: Date.now(),
+      collections: 1
+    };
+    
+    this.gcMetrics.push(initialMetric);
   }
 
   private markReachableObjects(): Set<string> {
@@ -617,10 +654,11 @@ export class JavaInterpreter {
   }
 
   getHeapStatus(): { used: number; max: number; percentage: number; offHeap: any } {
+    const currentPercentage = Math.max(8, (this.heapSize / this.maxHeapSize) * 100);
     return {
       used: this.heapSize,
       max: this.maxHeapSize,
-      percentage: Math.max(8, (this.heapSize / this.maxHeapSize) * 100),
+      percentage: currentPercentage,
       offHeap: { allocated: this.allocatedObjects * 150, total: 512 * 1024 }
     };
   }

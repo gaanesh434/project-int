@@ -11,6 +11,7 @@ export interface SyntaxError {
 export class SyntaxValidator {
   private tokens: Token[];
   private errors: SyntaxError[] = [];
+  private processedLines = new Set<number>(); // Track processed lines to avoid duplicates
 
   constructor(tokens: Token[]) {
     this.tokens = tokens;
@@ -18,13 +19,13 @@ export class SyntaxValidator {
 
   validate(): SyntaxError[] {
     this.errors = [];
+    this.processedLines.clear();
     
     this.validateDeadlineAnnotations();
     this.validateSemicolons();
     this.validateDivisionByZero();
     this.validateUnsafeOperations();
     this.validateBraceMatching();
-    this.validateMethodDeclarations();
     
     return this.errors;
   }
@@ -60,23 +61,34 @@ export class SyntaxValidator {
   }
 
   private validateSemicolons(): void {
+    const checkedLines = new Set<number>();
+    
     for (let i = 0; i < this.tokens.length - 1; i++) {
       const token = this.tokens[i];
       const nextToken = this.tokens[i + 1];
+      
+      // Skip if we already checked this line
+      if (checkedLines.has(token.line)) {
+        continue;
+      }
       
       // Check for missing semicolons after statements
       if (this.isStatementEnd(token) && 
           nextToken.type !== TokenType.SEMICOLON && 
           nextToken.type !== TokenType.RIGHT_BRACE &&
           nextToken.type !== TokenType.EOF &&
+          nextToken.line !== token.line && // Different lines
           !this.isControlStructure(token)) {
         
-        // Skip if it's a comment or annotation
+        // Skip if it's a comment, annotation, or method declaration
         if (token.type !== TokenType.COMMENT && 
             !token.value.startsWith('@') &&
-            !token.value.startsWith('//')) {
+            !token.value.startsWith('//') &&
+            !this.isMethodDeclaration(i)) {
+          
           this.addError(token.line, token.column, 
             'Missing semicolon', 'warning', 'low');
+          checkedLines.add(token.line);
         }
       }
     }
@@ -98,14 +110,17 @@ export class SyntaxValidator {
   }
 
   private validateUnsafeOperations(): void {
+    const checkedLines = new Set<number>();
+    
     for (const token of this.tokens) {
-      if (token.type === TokenType.IDENTIFIER) {
+      if (token.type === TokenType.IDENTIFIER && !checkedLines.has(token.line)) {
         if (token.value === 'System.exit' || 
             token.value.includes('Runtime.getRuntime') ||
             token.value.includes('ProcessBuilder') ||
             token.value.includes('Class.forName')) {
           this.addError(token.line, token.column, 
             'Unsafe operation not allowed in IoT environment', 'error', 'critical');
+          checkedLines.add(token.line);
         }
       }
     }
@@ -140,33 +155,6 @@ export class SyntaxValidator {
     for (const unclosed of stack) {
       this.addError(unclosed.line, unclosed.column, 
         'Unclosed brace/bracket/parenthesis', 'error', 'high');
-    }
-  }
-
-  private validateMethodDeclarations(): void {
-    for (let i = 0; i < this.tokens.length - 3; i++) {
-      const token = this.tokens[i];
-      
-      if (token.type === TokenType.IDENTIFIER && 
-          i + 1 < this.tokens.length && 
-          this.tokens[i + 1].type === TokenType.LEFT_PAREN) {
-        
-        // Check if method has proper access modifier
-        let hasModifier = false;
-        if (i > 0) {
-          const prevToken = this.tokens[i - 1];
-          if (prevToken.type === TokenType.PUBLIC || 
-              prevToken.type === TokenType.PRIVATE || 
-              prevToken.type === TokenType.STATIC) {
-            hasModifier = true;
-          }
-        }
-        
-        if (!hasModifier && this.isMethodDeclaration(i)) {
-          this.addError(token.line, token.column, 
-            'Method should have access modifier (public/private)', 'warning', 'low');
-        }
-      }
     }
   }
 
@@ -214,23 +202,39 @@ export class SyntaxValidator {
   }
 
   private isMethodDeclaration(index: number): boolean {
-    // Simple heuristic: if followed by parentheses and braces, likely a method
-    let i = index + 1;
+    // Check if this is part of a method declaration
+    let i = index;
     
-    // Skip to closing paren
-    while (i < this.tokens.length && this.tokens[i].type !== TokenType.RIGHT_PAREN) {
-      i++;
+    // Look backwards for method keywords
+    while (i >= 0 && this.tokens[i].line === this.tokens[index].line) {
+      if (this.tokens[i].type === TokenType.PUBLIC || 
+          this.tokens[i].type === TokenType.PRIVATE ||
+          this.tokens[i].type === TokenType.VOID) {
+        return true;
+      }
+      i--;
     }
     
-    // Check if followed by opening brace
-    if (i + 1 < this.tokens.length && this.tokens[i + 1].type === TokenType.LEFT_BRACE) {
-      return true;
+    // Look forwards for opening parenthesis
+    i = index;
+    while (i < this.tokens.length && this.tokens[i].line === this.tokens[index].line) {
+      if (this.tokens[i].type === TokenType.LEFT_PAREN) {
+        return true;
+      }
+      i++;
     }
     
     return false;
   }
 
   private addError(line: number, column: number, message: string, type: 'error' | 'warning', severity: 'low' | 'medium' | 'high' | 'critical'): void {
-    this.errors.push({ line, column, message, type, severity });
+    // Avoid duplicate errors on the same line with the same message
+    const existingError = this.errors.find(e => 
+      e.line === line && e.message === message
+    );
+    
+    if (!existingError) {
+      this.errors.push({ line, column, message, type, severity });
+    }
   }
 }
