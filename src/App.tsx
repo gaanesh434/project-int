@@ -8,8 +8,9 @@ import WasmDemo from './components/WasmDemo';
 import Benchmarks from './components/Benchmarks';
 import EmbeddedSimulator from './components/EmbeddedSimulator';
 import TestRunner from './tests/TestRunner';
+import HelpDocumentation from './components/HelpDocumentation';
 
-type ActiveTab = 'editor' | 'gc' | 'debugger' | 'wasm' | 'benchmarks' | 'embedded' | 'tests';
+type ActiveTab = 'editor' | 'gc' | 'debugger' | 'wasm' | 'benchmarks' | 'embedded' | 'tests' | 'help';
 
 function App() {
   const [activeTab, setActiveTab] = useState<ActiveTab>('editor');
@@ -31,6 +32,8 @@ function App() {
         return <EmbeddedSimulator />;
       case 'tests':
         return <TestRunner />;
+      case 'help':
+        return <HelpDocumentation />;
       default:
         return <RealTimeCodeEditor />;
     }

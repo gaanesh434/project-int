@@ -8,7 +8,8 @@ import {
   Cpu,
   TestTube,
   ChevronLeft,
-  ChevronRight
+  ChevronRight,
+  HelpCircle
 } from 'lucide-react';
 
 interface SidebarProps {
@@ -27,6 +28,7 @@ const Sidebar: React.FC<SidebarProps> = ({ activeTab, setActiveTab, isOpen, onTo
     { id: 'benchmarks', label: 'Benchmarks', icon: BarChart3 },
     { id: 'embedded', label: 'IoT Simulator', icon: Cpu },
     { id: 'tests', label: 'Test Suite', icon: TestTube },
+    { id: 'help', label: 'Help & Docs', icon: HelpCircle },
   ];
 
   return (

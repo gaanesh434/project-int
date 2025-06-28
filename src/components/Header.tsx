@@ -1,5 +1,5 @@
 import React from 'react';
-import { Activity, Github, ExternalLink } from 'lucide-react';
+import { Activity, Github, HelpCircle } from 'lucide-react';
 
 const Header: React.FC = () => {
   return (
@@ -29,8 +29,8 @@ const Header: React.FC = () => {
               </button>
               
               <button className="flex items-center space-x-2 px-3 py-2 bg-blue-600 hover:bg-blue-500 rounded-lg transition-colors">
-                <ExternalLink className="w-4 h-4" />
-                <span className="text-sm">Live Demo</span>
+                <HelpCircle className="w-4 h-4" />
+                <span className="text-sm">Help & Docs</span>
               </button>
             </div>
           </div>
