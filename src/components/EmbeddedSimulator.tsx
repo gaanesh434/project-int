@@ -43,7 +43,7 @@ System.out.println("Initial humidity: " + humidity + "%");
 // Simulate sensor readings with real logic
 for (int i = 0; i < 5; i++) {
     // Simulate temperature fluctuation based on time and environment
-    int tempChange = (int)(Math.random() * 10) - 5;
+    int tempChange = Math.floor(Math.random() * 10) - 5;
     temperature = temperature + tempChange;
     
     // Humidity changes inversely with temperature
@@ -74,7 +74,7 @@ for (int i = 0; i < 5; i++) {
     }
     
     // Simulate processing time and resource usage
-    int processingTime = (int)(Math.random() * 5) + 1;
+    int processingTime = Math.floor(Math.random() * 5) + 1;
     System.out.println("  Processing time: " + processingTime + "ms");
 }
 

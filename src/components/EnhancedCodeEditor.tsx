@@ -15,8 +15,8 @@ int sensorRead() {
     // Real-time sensor loop with deadline enforcement
     for (int i = 0; i < 5; i++) {
         // Simulate sensor reading with safety checks
-        temperature = temperature + (int)(Math.random() * 10) - 5;
-        humidity = humidity + (int)(Math.random() * 6) - 3;
+        temperature = temperature + Math.floor(Math.random() * 10) - 5;
+        humidity = humidity + Math.floor(Math.random() * 6) - 3;
         
         System.out.println("Reading " + (i + 1) + ":");
         System.out.println("  Temperature: " + temperature + "°C");
