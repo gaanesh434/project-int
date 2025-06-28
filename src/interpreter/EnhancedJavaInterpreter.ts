@@ -471,6 +471,10 @@ export class EnhancedJavaInterpreter {
       const varName = parts[0].trim();
       const value = parts.slice(1).join('=').trim().replace(';', '');
       
+      // Get the existing variable to determine its type
+      const existingVar = this.environment.get(varName);
+      const expectedType = existingVar?.type;
+      
       let javaValue: JavaValue;
       
       if (value.startsWith('"') && value.endsWith('"')) {
@@ -482,7 +486,14 @@ export class EnhancedJavaInterpreter {
         javaValue = { value: num, type: Number.isInteger(num) ? 'int' : 'double' };
       } else {
         const result = this.evaluateExpression(value);
-        javaValue = { value: result, type: typeof result === 'number' ? 'int' : 'String' };
+        
+        // Ensure numeric types are actually numbers
+        if (expectedType === 'int' || expectedType === 'double') {
+          const numericResult = Number(result);
+          javaValue = { value: isNaN(numericResult) ? 0 : numericResult, type: expectedType };
+        } else {
+          javaValue = { value: result, type: typeof result === 'number' ? 'int' : 'String' };
+        }
       }
       
       this.environment.set(varName, javaValue);
@@ -505,7 +516,15 @@ export class EnhancedJavaInterpreter {
           const num = Number(initialValue);
           javaValue = { value: num, type: type };
         } else {
-          javaValue = this.getDefaultValue(type);
+          const result = this.evaluateExpression(initialValue);
+          
+          // Ensure numeric types are actually numbers
+          if (type === 'int' || type === 'double') {
+            const numericResult = Number(result);
+            javaValue = { value: isNaN(numericResult) ? 0 : numericResult, type: type };
+          } else {
+            javaValue = { value: result, type: type };
+          }
         }
       } else {
         javaValue = this.getDefaultValue(type);

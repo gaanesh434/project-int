@@ -384,6 +384,10 @@ export class JavaInterpreter {
       const varName = parts[0].trim();
       const value = parts.slice(1).join('=').trim().replace(';', '');
       
+      // Get the existing variable to determine its type
+      const existingVar = this.environment.get(varName);
+      const expectedType = existingVar?.type;
+      
       let javaValue: JavaValue;
       
       if (value.startsWith('"') && value.endsWith('"')) {
@@ -393,7 +397,14 @@ export class JavaInterpreter {
       } else if (value.includes('+') || value.includes('-') || value.includes('*') || value.includes('/')) {
         // Expression evaluation
         const result = this.evaluateExpression(value);
-        javaValue = { value: result, type: typeof result === 'number' ? 'int' : 'String' };
+        
+        // Ensure numeric types are actually numbers
+        if (expectedType === 'int' || expectedType === 'double') {
+          const numericResult = Number(result);
+          javaValue = { value: isNaN(numericResult) ? 0 : numericResult, type: expectedType };
+        } else {
+          javaValue = { value: result, type: typeof result === 'number' ? 'int' : 'String' };
+        }
       } else if (!isNaN(Number(value))) {
         const num = Number(value);
         javaValue = { value: num, type: Number.isInteger(num) ? 'int' : 'double' };
@@ -402,8 +413,18 @@ export class JavaInterpreter {
         if (value.includes('Math.random()')) {
           javaValue = { value: Math.random(), type: 'double' };
         } else {
-          const existingVar = this.environment.get(value);
-          javaValue = existingVar || { value: value, type: 'String' };
+          const referencedVar = this.environment.get(value);
+          if (referencedVar) {
+            // Ensure numeric types are preserved
+            if ((expectedType === 'int' || expectedType === 'double') && typeof referencedVar.value === 'string') {
+              const numericValue = Number(referencedVar.value);
+              javaValue = { value: isNaN(numericValue) ? 0 : numericValue, type: expectedType };
+            } else {
+              javaValue = referencedVar;
+            }
+          } else {
+            javaValue = { value: value, type: 'String' };
+          }
         }
       }
       
@@ -432,7 +453,14 @@ export class JavaInterpreter {
           javaValue = { value: num, type: type };
         } else if (initialValue.includes('+') || initialValue.includes('-')) {
           const result = this.evaluateExpression(initialValue);
-          javaValue = { value: result, type: type };
+          
+          // Ensure numeric types are actually numbers
+          if (type === 'int' || type === 'double') {
+            const numericResult = Number(result);
+            javaValue = { value: isNaN(numericResult) ? 0 : numericResult, type: type };
+          } else {
+            javaValue = { value: result, type: type };
+          }
         } else {
           javaValue = this.getDefaultValue(type);
         }
