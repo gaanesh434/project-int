@@ -348,10 +348,10 @@ public void dataTransmit(int temp, int humidity) {
   };
 
   return (
-    <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 h-[calc(100vh-8rem)]">
+    <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 min-h-[calc(100vh-8rem)]">
       {/* Enhanced Code Editor with Real-time Features */}
-      <div className="bg-gray-800 rounded-xl border border-gray-700">
-        <div className="flex items-center justify-between p-4 border-b border-gray-700">
+      <div className="bg-gray-800 rounded-xl border border-gray-700 flex flex-col">
+        <div className="flex items-center justify-between p-4 border-b border-gray-700 flex-shrink-0">
           <div>
             <h2 className="text-lg font-semibold">Real-time Java Code Editor</h2>
             <div className="flex items-center space-x-4 mt-1">
@@ -393,7 +393,7 @@ public void dataTransmit(int temp, int humidity) {
           </div>
         </div>
         
-        <div className="p-4 relative">
+        <div className="p-4 flex-1 relative">
           <SyntaxHighlighter 
             code={code} 
             onChange={setCode} 
@@ -410,7 +410,7 @@ public void dataTransmit(int temp, int humidity) {
         </div>
         
         {/* Enhanced Features Info */}
-        <div className="p-4 border-t border-gray-700 bg-gray-750">
+        <div className="p-4 border-t border-gray-700 bg-gray-750 flex-shrink-0">
           <div className="grid grid-cols-2 gap-4 text-xs">
             <div className="flex items-start space-x-2">
               <Shield className="w-4 h-4 text-green-400 mt-0.5" />
@@ -445,8 +445,8 @@ public void dataTransmit(int temp, int humidity) {
       </div>
 
       {/* Enhanced Output Console with Live Metrics */}
-      <div className="bg-gray-800 rounded-xl border border-gray-700">
-        <div className="flex items-center justify-between p-4 border-b border-gray-700">
+      <div className="bg-gray-800 rounded-xl border border-gray-700 flex flex-col">
+        <div className="flex items-center justify-between p-4 border-b border-gray-700 flex-shrink-0">
           <h2 className="text-lg font-semibold">Live Execution Monitor</h2>
           <div className="flex items-center space-x-2">
             <button
@@ -477,8 +477,8 @@ public void dataTransmit(int temp, int humidity) {
           </div>
         </div>
         
-        <div className="p-4">
-          <pre className="text-sm text-gray-100 font-mono whitespace-pre-wrap bg-gray-900 p-4 rounded-lg h-64 overflow-y-auto">
+        <div className="p-4 flex-1">
+          <pre className="text-sm text-gray-100 font-mono whitespace-pre-wrap bg-gray-900 p-4 rounded-lg h-full overflow-y-auto">
             {output || `🚀 Enhanced JavaRT Interpreter Ready
 
 Features Active:
@@ -495,7 +495,7 @@ Type your code and press Run to see real execution metrics!`}
         </div>
 
         {/* Real-time Performance Dashboard */}
-        <div className="p-4 border-t border-gray-700 bg-gray-750">
+        <div className="p-4 border-t border-gray-700 bg-gray-750 flex-shrink-0">
           <div className="grid grid-cols-5 gap-3">
             <div className="text-center">
               <div className="text-lg font-bold text-green-400">{executionStats.gcPauseTime}ms</div>

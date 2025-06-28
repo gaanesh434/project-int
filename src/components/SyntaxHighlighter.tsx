@@ -156,13 +156,13 @@ export const SyntaxHighlighter: React.FC<SyntaxHighlighterProps> = ({ code, onCh
   };
 
   return (
-    <div className="relative">
+    <div className="relative h-full">
       {/* Code input textarea */}
       <textarea
         ref={textareaRef}
         value={code}
         onChange={(e) => onChange(e.target.value)}
-        className="w-full h-96 bg-transparent text-transparent caret-white font-mono text-sm p-4 rounded-lg border border-gray-600 focus:border-blue-500 focus:outline-none resize-none relative z-20"
+        className="w-full h-full bg-transparent text-transparent caret-white font-mono text-sm p-4 rounded-lg border border-gray-600 focus:border-blue-500 focus:outline-none resize-none relative z-20"
         spellCheck={false}
         style={{ caretColor: 'white' }}
         placeholder="Enter your Java code with @Deadline annotations..."
