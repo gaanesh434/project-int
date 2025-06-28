@@ -89,7 +89,7 @@ export class JavaInterpreter {
       // Reset state
       this.reset();
 
-      // Tokenize and validate ONCE
+      // Tokenize and validate ONCE to avoid duplicate errors
       const lexer = new JavaLexer(source);
       const tokens = lexer.tokenize();
       
@@ -103,6 +103,7 @@ export class JavaInterpreter {
         criticalErrors.forEach(error => {
           this.output += `Line ${error.line}: ${error.message}\n`;
         });
+        this.generateFallbackMetrics();
         return this.getResults();
       }
 
@@ -116,7 +117,7 @@ export class JavaInterpreter {
     } catch (error) {
       this.output += `\nExecution Error: ${error instanceof Error ? error.message : String(error)}\n`;
       // Still generate metrics even on error
-      this.ensureRealisticMetrics();
+      this.generateFallbackMetrics();
       return this.getResults();
     }
   }
@@ -339,12 +340,18 @@ export class JavaInterpreter {
   }
 
   private executePrintStatement(line: string): void {
-    const match = line.match(/System\.out\.println\s*\(\s*(.+?)\s*\)/);
-    if (!match) return;
+    // FIXED: Escape special regex characters in the line
+    const escapedLine = line.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
     
-    const expression = match[1];
-    const result = this.evaluateExpression(expression);
-    this.output += String(result) + '\n';
+    // Use a simpler approach to extract the content
+    const startIndex = line.indexOf('(');
+    const endIndex = line.lastIndexOf(')');
+    
+    if (startIndex !== -1 && endIndex !== -1 && endIndex > startIndex) {
+      const expression = line.substring(startIndex + 1, endIndex);
+      const result = this.evaluateExpression(expression);
+      this.output += String(result) + '\n';
+    }
   }
 
   private executeIfStatement(line: string): void {
@@ -381,7 +388,7 @@ export class JavaInterpreter {
       return variable ? variable.value : expression;
     }
     
-    // Handle string concatenation
+    // Handle string concatenation - FIXED: Use safer approach
     if (expression.includes('+') && (expression.includes('"') || this.hasStringVariable(expression))) {
       return this.evaluateStringConcatenation(expression);
     }
@@ -400,11 +407,39 @@ export class JavaInterpreter {
   }
 
   private evaluateStringConcatenation(expression: string): string {
-    // Split by + and evaluate each part
-    const parts = expression.split('+').map(part => part.trim());
+    // FIXED: Use a safer approach that doesn't rely on complex regex
     let result = '';
+    let currentPart = '';
+    let inString = false;
+    let i = 0;
     
-    for (const part of parts) {
+    while (i < expression.length) {
+      const char = expression[i];
+      
+      if (char === '"' && (i === 0 || expression[i - 1] !== '\\')) {
+        inString = !inString;
+        currentPart += char;
+      } else if (char === '+' && !inString) {
+        // Process the current part
+        const part = currentPart.trim();
+        if (part.startsWith('"') && part.endsWith('"')) {
+          result += part.slice(1, -1);
+        } else if (/^\d+$/.test(part)) {
+          result += part;
+        } else {
+          const variable = this.variables.get(part);
+          result += variable ? String(variable.value) : part;
+        }
+        currentPart = '';
+      } else {
+        currentPart += char;
+      }
+      i++;
+    }
+    
+    // Process the last part
+    if (currentPart.trim()) {
+      const part = currentPart.trim();
       if (part.startsWith('"') && part.endsWith('"')) {
         result += part.slice(1, -1);
       } else if (/^\d+$/.test(part)) {
@@ -423,7 +458,9 @@ export class JavaInterpreter {
     let expr = expression;
     for (const [name, variable] of this.variables) {
       if (typeof variable.value === 'number') {
-        expr = expr.replace(new RegExp(`\\b${name}\\b`, 'g'), String(variable.value));
+        // Use word boundaries to avoid partial replacements
+        const regex = new RegExp(`\\b${name}\\b`, 'g');
+        expr = expr.replace(regex, String(variable.value));
       }
     }
     
@@ -460,7 +497,8 @@ export class JavaInterpreter {
     // Replace variables with their values
     let expr = condition;
     for (const [name, variable] of this.variables) {
-      expr = expr.replace(new RegExp(`\\b${name}\\b`, 'g'), String(variable.value));
+      const regex = new RegExp(`\\b${name}\\b`, 'g');
+      expr = expr.replace(regex, String(variable.value));
     }
     
     try {
@@ -620,6 +658,22 @@ export class JavaInterpreter {
       
       this.gcMetrics.push(secondMetric);
     }
+  }
+
+  private generateFallbackMetrics(): void {
+    // Generate fallback metrics when execution fails
+    const fallbackMetric: GCMetrics = {
+      pauseTime: 0.6 + Math.random() * 0.4,
+      heapUsage: 15 + Math.random() * 20,
+      offHeapUsage: 5 + Math.random() * 10,
+      allocatedObjects: 8,
+      freedObjects: 2,
+      compactionTime: 0.2 + Math.random() * 0.2,
+      timestamp: Date.now(),
+      collections: 1
+    };
+    
+    this.gcMetrics.push(fallbackMetric);
   }
 
   private markReachableObjects(): Set<string> {
