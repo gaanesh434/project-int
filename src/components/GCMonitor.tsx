@@ -21,50 +21,50 @@ const GCMonitor: React.FC = () => {
   const [totalCollections, setTotalCollections] = useState(0);
   const [currentHeapUsage, setCurrentHeapUsage] = useState(0);
   const [currentOffHeapUsage, setCurrentOffHeapUsage] = useState(0);
+  const [executionCount, setExecutionCount] = useState(0);
 
-  // Enhanced test code that generates significant memory allocation
-  const testCode = `
-// Real memory allocation test with off-heap optimization
-String[] dataArray = new String[200];
-int[] numberArray = new int[500];
+  // Real memory allocation test that generates actual GC activity
+  const testCode = `// Real memory allocation test
+String[] dataArray = new String[50];
+int[] numberArray = new int[100];
 int totalAllocations = 0;
 
-System.out.println("Starting enhanced memory allocation test...");
+System.out.println("Starting memory allocation test...");
 
-for (int i = 0; i < 100; i++) {
-    // Allocate various types of objects
-    String largeString = "Large data block " + i + " with extended content for memory pressure testing";
-    dataArray[i % 200] = largeString;
-    
-    // Create temporary objects that will become garbage
-    for (int j = 0; j < 10; j++) {
-        String tempData = "Temporary object " + i + "_" + j;
-        int tempNumber = i * j + Math.floor(Math.random() * 100);
-        numberArray[j % 500] = tempNumber;
+for (int i = 0; i < 25; i++) {
+    // Allocate string objects
+    String largeString = "Data block " + i + " with content for testing";
+    if (i < 50) {
+        dataArray[i] = largeString;
     }
     
-    // Simulate processing with more allocations
-    String processedData = "Processed: " + largeString + " at iteration " + i;
+    // Create temporary objects that will become garbage
+    for (int j = 0; j < 4; j++) {
+        String tempData = "Temporary object " + i + "_" + j;
+        int tempNumber = i * j + 10;
+        if ((i * 4 + j) < 100) {
+            numberArray[i * 4 + j] = tempNumber;
+        }
+    }
+    
     totalAllocations = totalAllocations + 1;
     
-    // Create objects that will trigger off-heap allocation
-    if (i % 10 == 0) {
+    // Create large objects periodically
+    if (i % 5 == 0) {
         String bigData = "";
-        for (int k = 0; k < 50; k++) {
-            bigData = bigData + "Large object data segment " + k + " ";
+        for (int k = 0; k < 10; k++) {
+            bigData = bigData + "Large segment " + k + " ";
         }
         System.out.println("Created large object at iteration " + i);
     }
     
-    if (i % 25 == 0) {
+    if (i % 8 == 0) {
         System.out.println("Progress: " + i + " iterations, " + totalAllocations + " allocations");
     }
 }
 
-System.out.println("Memory allocation test completed");
-System.out.println("Total allocations: " + totalAllocations);
-System.out.println("Final array size: " + dataArray.length);
-`;
+System.out.println("Memory test completed");
+System.out.println("Total allocations: " + totalAllocations);`;
 
   useEffect(() => {
     let interval: NodeJS.Timeout;
@@ -72,17 +72,18 @@ System.out.println("Final array size: " + dataArray.length);
     if (isMonitoring) {
       interval = setInterval(() => {
         try {
-          // Execute the enhanced test code to generate real GC activity
-          interpreter.interpret(testCode);
+          // Execute the test code to generate real GC activity
+          const result = interpreter.interpret(testCode);
+          setExecutionCount(prev => prev + 1);
           
-          // Get real metrics from enhanced interpreter
+          // Get real metrics from interpreter
           const metrics = interpreter.getGCMetrics();
           const heapStatus = interpreter.getHeapStatus();
-          const offHeapStatus = interpreter.getOffHeapStatus();
           
           if (metrics.length > 0) {
             const latestMetric = metrics[metrics.length - 1];
             
+            // Create realistic data point based on actual execution
             const newData: GCData = {
               time: new Date().toLocaleTimeString(),
               pauseTime: parseFloat(latestMetric.pauseTime.toFixed(2)),
@@ -95,18 +96,18 @@ System.out.println("Final array size: " + dataArray.length);
             };
             
             setGcData(prev => {
-              const updated = [...prev, newData].slice(-30); // Keep last 30 data points
+              const updated = [...prev, newData].slice(-20); // Keep last 20 data points
               return updated;
             });
             
             setTotalCollections(prev => prev + latestMetric.collections);
-            setCurrentHeapUsage(heapStatus.percentage);
-            setCurrentOffHeapUsage((offHeapStatus.allocated / offHeapStatus.total) * 100);
+            setCurrentHeapUsage(latestMetric.heapUsage);
+            setCurrentOffHeapUsage(latestMetric.offHeapUsage);
           }
         } catch (error) {
           console.error('GC monitoring error:', error);
         }
-      }, 2000);
+      }, 3000); // Execute every 3 seconds
     }
 
     return () => {
@@ -142,14 +143,18 @@ System.out.println("Final array size: " + dataArray.length);
       setTotalCollections(0);
       setCurrentHeapUsage(0);
       setCurrentOffHeapUsage(0);
+      setExecutionCount(0);
     }
   };
 
   const handleManualGC = () => {
+    // Execute test code first to create objects
+    interpreter.interpret(testCode);
+    
+    // Then trigger GC
     interpreter.triggerGC();
     const metrics = interpreter.getGCMetrics();
     const heapStatus = interpreter.getHeapStatus();
-    const offHeapStatus = interpreter.getOffHeapStatus();
     
     if (metrics.length > 0) {
       const latestMetric = metrics[metrics.length - 1];
@@ -165,10 +170,10 @@ System.out.println("Final array size: " + dataArray.length);
         compactionTime: parseFloat(latestMetric.compactionTime.toFixed(2)),
       };
       
-      setGcData(prev => [...prev, newData].slice(-30));
+      setGcData(prev => [...prev, newData].slice(-20));
       setTotalCollections(prev => prev + 1);
-      setCurrentHeapUsage(heapStatus.percentage);
-      setCurrentOffHeapUsage((offHeapStatus.allocated / offHeapStatus.total) * 100);
+      setCurrentHeapUsage(latestMetric.heapUsage);
+      setCurrentOffHeapUsage(latestMetric.offHeapUsage);
     }
   };
 
@@ -178,7 +183,7 @@ System.out.println("Final array size: " + dataArray.length);
       <div className="flex items-center justify-between">
         <div>
           <h1 className="text-2xl font-bold text-white">Real-time Garbage Collector Monitor</h1>
-          <p className="text-gray-400">Live monitoring of Enhanced JavaRT interpreter with off-heap optimization</p>
+          <p className="text-gray-400">Live monitoring of JavaRT interpreter with actual code execution</p>
         </div>
         
         <div className="flex items-center space-x-2">
@@ -204,7 +209,20 @@ System.out.println("Final array size: " + dataArray.length);
         </div>
       </div>
 
-      {/* Enhanced Real-time Metrics */}
+      {/* Real-time Status */}
+      {isMonitoring && (
+        <div className="bg-blue-900/20 border border-blue-500 rounded-lg p-4">
+          <div className="flex items-center space-x-2 mb-2">
+            <Activity className="w-5 h-5 text-blue-400 animate-pulse" />
+            <span className="text-blue-400 font-medium">Live Monitoring Active</span>
+          </div>
+          <div className="text-sm text-gray-300">
+            Executing memory allocation tests every 3 seconds • Executions: {executionCount} • Data points: {gcData.length}
+          </div>
+        </div>
+      )}
+
+      {/* Real-time Metrics */}
       <div className="grid grid-cols-1 md:grid-cols-5 gap-6">
         <div className="bg-gray-800 rounded-xl p-6 border border-gray-700">
           <div className="flex items-center space-x-3">
@@ -262,11 +280,11 @@ System.out.println("Final array size: " + dataArray.length);
         </div>
       </div>
 
-      {/* Enhanced Live Charts */}
+      {/* Live Charts with Real Data */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-        {/* GC Pause Times with Compaction */}
+        {/* GC Performance Metrics */}
         <div className="bg-gray-800 rounded-xl p-6 border border-gray-700">
-          <h3 className="text-lg font-semibold text-white mb-4">GC Performance Metrics</h3>
+          <h3 className="text-lg font-semibold text-white mb-4">GC Performance Metrics (Live Data)</h3>
           <ResponsiveContainer width="100%" height={300}>
             <LineChart data={gcData}>
               <CartesianGrid strokeDasharray="3 3" stroke="#374151" />
@@ -298,13 +316,13 @@ System.out.println("Final array size: " + dataArray.length);
             </LineChart>
           </ResponsiveContainer>
           <div className="text-sm text-gray-400 mt-2">
-            {isMonitoring ? 'Live GC performance data from enhanced interpreter' : 'Start monitoring to see real GC metrics'}
+            {isMonitoring ? `Live GC data from ${executionCount} code executions` : 'Start monitoring to see real GC metrics from code execution'}
           </div>
         </div>
 
-        {/* Memory Usage Comparison */}
+        {/* Memory Usage Distribution */}
         <div className="bg-gray-800 rounded-xl p-6 border border-gray-700">
-          <h3 className="text-lg font-semibold text-white mb-4">Memory Usage Distribution</h3>
+          <h3 className="text-lg font-semibold text-white mb-4">Memory Usage Distribution (Real-time)</h3>
           <ResponsiveContainer width="100%" height={300}>
             <AreaChart data={gcData}>
               <CartesianGrid strokeDasharray="3 3" stroke="#374151" />
@@ -338,19 +356,19 @@ System.out.println("Final array size: " + dataArray.length);
             </AreaChart>
           </ResponsiveContainer>
           <div className="text-sm text-gray-400 mt-2">
-            Real-time heap vs off-heap memory distribution with ByteBuffer optimization
+            Real-time heap vs off-heap memory from actual Java code execution
           </div>
         </div>
       </div>
 
       {/* Object Allocation Statistics */}
       <div className="bg-gray-800 rounded-xl p-6 border border-gray-700">
-        <h3 className="text-lg font-semibold text-white mb-4">Object Lifecycle Statistics</h3>
+        <h3 className="text-lg font-semibold text-white mb-4">Object Lifecycle Statistics (Live)</h3>
         <div className="grid grid-cols-1 md:grid-cols-4 gap-6">
           <div className="text-center p-4 bg-gray-700 rounded-lg">
             <div className="text-3xl font-bold text-green-400">{totalAllocated}</div>
             <div className="text-sm text-gray-400">Total Objects Allocated</div>
-            <div className="text-xs text-green-400 mt-1">During monitoring session</div>
+            <div className="text-xs text-green-400 mt-1">From {executionCount} executions</div>
           </div>
           
           <div className="text-center p-4 bg-gray-700 rounded-lg">
@@ -373,16 +391,27 @@ System.out.println("Final array size: " + dataArray.length);
         </div>
       </div>
 
-      {/* Enhanced GC Algorithm Details */}
+      {/* Real Code Being Executed */}
       <div className="bg-gray-800 rounded-xl p-6 border border-gray-700">
-        <h3 className="text-lg font-semibold text-white mb-4">Enhanced Real-time GC Implementation</h3>
+        <h3 className="text-lg font-semibold text-white mb-4">Memory Allocation Test Code (Currently Executing)</h3>
+        <pre className="text-sm text-gray-100 font-mono whitespace-pre-wrap bg-gray-900 p-4 rounded-lg overflow-x-auto max-h-64 overflow-y-auto">
+          {testCode}
+        </pre>
+        <div className="text-sm text-gray-400 mt-2">
+          This Java code executes every 3 seconds during monitoring, creating real objects and generating actual GC metrics.
+        </div>
+      </div>
+
+      {/* GC Algorithm Details */}
+      <div className="bg-gray-800 rounded-xl p-6 border border-gray-700">
+        <h3 className="text-lg font-semibold text-white mb-4">Real-time GC Implementation</h3>
         <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
           <div className="space-y-4">
             <h4 className="text-md font-medium text-blue-400">Active Features</h4>
             <ul className="space-y-2 text-sm text-gray-300">
               <li className="flex items-center space-x-2">
                 <div className="w-2 h-2 bg-green-500 rounded-full"></div>
-                <span>Real object allocation tracking with type safety</span>
+                <span>Real object allocation tracking from code execution</span>
               </li>
               <li className="flex items-center space-x-2">
                 <div className="w-2 h-2 bg-green-500 rounded-full"></div>
@@ -390,11 +419,11 @@ System.out.println("Final array size: " + dataArray.length);
               </li>
               <li className="flex items-center space-x-2">
                 <div className="w-2 h-2 bg-green-500 rounded-full"></div>
-                <span>{'Off-heap allocation for large objects (>1KB)'}</span>
+                <span>Off-heap allocation for large objects</span>
               </li>
               <li className="flex items-center space-x-2">
                 <div className="w-2 h-2 bg-green-500 rounded-full"></div>
-                <span>Automatic GC triggering at 70% heap threshold</span>
+                <span>Automatic GC triggering based on heap pressure</span>
               </li>
               <li className="flex items-center space-x-2">
                 <div className="w-2 h-2 bg-green-500 rounded-full"></div>
@@ -404,7 +433,7 @@ System.out.println("Final array size: " + dataArray.length);
           </div>
           
           <div className="space-y-4">
-            <h4 className="text-md font-medium text-purple-400">Monitoring Capabilities</h4>
+            <h4 className="text-md font-medium text-purple-400">Live Monitoring</h4>
             <ul className="space-y-2 text-sm text-gray-300">
               <li className="flex items-center space-x-2">
                 <div className="w-2 h-2 bg-purple-500 rounded-full"></div>
@@ -424,23 +453,11 @@ System.out.println("Final array size: " + dataArray.length);
               </li>
               <li className="flex items-center space-x-2">
                 <div className="w-2 h-2 bg-purple-500 rounded-full"></div>
-                <span>Manual GC triggering with immediate metrics update</span>
+                <span>Data from actual Java code execution</span>
               </li>
             </ul>
           </div>
         </div>
-        
-        {isMonitoring && (
-          <div className="mt-6 p-4 bg-blue-900/20 border border-blue-500 rounded-lg">
-            <div className="flex items-center space-x-2 mb-2">
-              <Activity className="w-5 h-5 text-blue-400" />
-              <span className="text-blue-400 font-medium">Enhanced GC Monitoring Active</span>
-            </div>
-            <div className="text-sm text-gray-300">
-              Running enhanced memory allocation tests every 2 seconds with real off-heap optimization and compaction metrics
-            </div>
-          </div>
-        )}
       </div>
     </div>
   );
